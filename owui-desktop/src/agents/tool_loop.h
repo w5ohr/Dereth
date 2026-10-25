@@ -55,6 +55,7 @@ struct LoopConfig {
   std::string systemPrefix;        // prepended as a system message when set
   int maxRounds = 8;
   int maxToolResultChars = 24000;
+  Json format;                     // Ollama `format`: "json" or a JSON schema; null = free text
 };
 
 struct LoopHooks {

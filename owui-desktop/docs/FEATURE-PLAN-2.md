@@ -532,3 +532,29 @@ such), the model answered, and Up in the empty composer recalled the template wi
 braces intact. Not delivered from the item's wording: `{{selection}}` of another app's
 text (macOS gives no public way to read it without Accessibility; Services covers the
 "select text, ask" flow), and a picker for inserting variables (they are typed).
+
+2026-10-24 IV (83 agent loop): `src/agents/agent_loop.{h,cpp}` (UI-agnostic, built on
+the tool loop: plan -> act -> verify -> retry -> answer, with onSteps / onStatus /
+waitWhilePaused hooks and the tool hooks forwarded) and `src/agents/agent_integration.cpp`
+(composer brain toggle, extra["agentMode"]; `startAgentStream` takes the last user turn
+as the goal and the rest as history; the run is a `Stream::agentRun` snapshot copied into
+`Message::agentRun` and saved as `agentRun`; `drawAgentCard` shows the steps with
+running ring / tick / red ring, attempts and tool-call counts, click-to-expand outcomes
+and the checker's objection, Pause / Resume / Stop while live; right-click popover for
+agentMaxSteps 1-12, agentMaxAttempts 1-4, agentVerify). The planner and verifier ask
+Ollama for JSON through a new `LoopConfig::format`; `parsePlan` also accepts arrays,
+object items and numbered prose, `parseVerdict` accepts yes/no prose. `baseToolConfig` and
+`makeToolHooks` were extracted from `startToolStream` so both loops share model
+unwrapping, server instructions, approvals and tool invocation; palette "Toggle agent
+mode". `--agenttest` runs 14 offline checks. Verified against a scratch server with
+qwen3:8b and the calc test MCP server: a multiply/divide goal with only an `add` tool was
+planned into 3 steps, steps 1-2 were judged incomplete, retried once and marked not
+completed, step 3 done, and the answer said how the figures were reached ("1/3 steps
+done, 2 not completed"); an add-only goal was planned into 2 steps, paused on the
+existing approval card, ran 3 `add` calls after Always allow, both steps done, answer
+7911, all persisted. Fixed on the way: each tool loop numbers calls from `call_1`, so the
+cards of step 2 overwrote step 1's (2 cards, wrong results, for 3 calls) - the agent
+prefixes ids per call (`s2_call_1`). Not exercised: Pause (the button is wired to the
+flag the loop polls between steps) and a run without any MCP tools (text-only prefix).
+Known: the "Step n/m" status shows both in the card header and the message's status
+row while running.

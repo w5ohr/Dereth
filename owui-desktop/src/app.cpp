@@ -90,6 +90,7 @@ Json Message::toJson() const {
     for (const ToolCall& call : toolCalls) calls.push_back(call.toJson());
     j["mcpToolCalls"] = calls;
   }
+  if (agentRun.is_object()) j["agentRun"] = agentRun;
   return j;
 }
 
@@ -126,6 +127,7 @@ Message Message::fromJson(const Json& j) {
     m.rating = j["annotation"].value("rating", 0);
   }
   if (j.contains("followUps") && j["followUps"].is_array()) m.followUps = j["followUps"];
+  if (j.contains("agentRun") && j["agentRun"].is_object()) m.agentRun = j["agentRun"];
   if (j.contains("mcpToolCalls") && j["mcpToolCalls"].is_array()) {
     for (const auto& call : j["mcpToolCalls"]) m.toolCalls.push_back(ToolCall::fromJson(call));
   }
@@ -792,6 +794,10 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   // With MCP tools switched on the reply runs through the tool loop instead,
   // which talks to Ollama directly so the model can call our tools.
   const bool continuing = continueFromId == assistantId;
+  if (agentMode && !continuing) {
+    startAgentStream(assistantId, model);
+    return;
+  }
   if (mcpEnabled && !continuing) {
     if (!mcpToolSpecs().empty()) {
       startToolStream(assistantId, model);
@@ -1115,6 +1121,7 @@ void App::pollStreams() {
         message.status = stream->status;
         if (!stream->sources.empty()) message.sources = stream->sources;
         if (!stream->usage.empty()) message.usage = stream->usage;
+        if (stream->agentRun.is_object()) message.agentRun = stream->agentRun;
         // Tool calls: mirror the worker's list, keeping the cards' expanded state.
         for (size_t i = 0; i < stream->toolCalls.size(); ++i) {
           if (i < message.toolCalls.size()) {

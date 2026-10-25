@@ -278,6 +278,7 @@ void App::mcpDisconnect(const std::string& serverId) {
 
 void App::mcpInit() {
   mcpEnabled = settings().extra.value("mcpEnabled", false);
+  agentMode = settings().extra.value("agentMode", false);
   for (const auto& config : mcpServers()) {
     if (config.enabled) mcpConnect(config.id);
   }
@@ -345,21 +346,13 @@ void App::mcpImportConfig(const std::string& path) {
 
 // ---------------------------------------------------------------- tool stream
 
-void App::startToolStream(const std::string& assistantId, const std::string& model) {
-  auto stream = std::make_shared<Stream>();
-  stream->chatId = chat.id;
-  stream->messageId = assistantId;
-  stream->model = model;
-  stream->sessionId = sessionId_;
-  streams_.push_back(stream);
-  timings[assistantId] = MessageTiming{core::nowMillis(), 0.0, 0.0};
-
-  Json payload = buildCompletionPayload(assistantId, model);
+// The parts of a tool-loop configuration that do not depend on the turn:
+// the Ollama model behind a workspace model, its options, the tools and
+// the system prefix with every connected server's instructions.
+agents::LoopConfig App::baseToolConfig(const std::string& model) {
   agents::LoopConfig config;
-  config.messages = payload["messages"];
   config.tools = mcpToolSpecs();
   config.options = agents::ollamaOptionsFromParams(chat.params);
-  config.maxRounds = std::max(1, settings().extra.value("mcpMaxRounds", 8));
 
   // A workspace model is an Ollama model plus a system prompt; Ollama only
   // knows the former, so unwrap it and carry the prompt along.
@@ -390,6 +383,111 @@ void App::startToolStream(const std::string& assistantId, const std::string& mod
     }
   }
   config.systemPrefix = prefix;
+  return config;
+}
+
+// Approval, invocation and progress hooks shared by every loop that runs
+// MCP tools for a stream (the tool loop and the agent loop).
+agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
+                                     const std::map<std::string, std::shared_ptr<mcp::Client>>& clients,
+                                     const std::map<std::string, agents::ToolSpec>& byName,
+                                     bool autoApprove, const Json& approvals) {
+  agents::LoopHooks hooks;
+  hooks.onCallState = [stream, byName](const agents::Call& call, agents::CallState state,
+                                       const agents::ToolOutcome* outcome) {
+    std::lock_guard<std::mutex> lock(stream->mutex);
+    ToolCall* entry = nullptr;
+    for (ToolCall& t : stream->toolCalls) {
+      if (t.id == call.id) entry = &t;
+    }
+    if (!entry) {
+      ToolCall fresh;
+      fresh.id = call.id;
+      fresh.qualifiedName = call.name;
+      fresh.args = call.args;
+      auto spec = byName.find(call.name);
+      if (spec != byName.end()) {
+        fresh.server = spec->second.serverName;
+        fresh.tool = spec->second.tool;
+      } else {
+        fresh.tool = call.name;
+      }
+      stream->toolCalls.push_back(fresh);
+      entry = &stream->toolCalls.back();
+    }
+    entry->state = state;
+    if (state == agents::Running) entry->startedMs = core::nowMillis();
+    if (outcome) {
+      entry->result = outcome->text;
+      entry->error = outcome->error;
+      entry->isError = outcome->isError;
+      entry->durationMs = outcome->durationMs;
+    }
+    if (state == agents::Pending) {
+      stream->status = "Waiting for approval: " + entry->tool;
+    } else if (state == agents::Running) {
+      stream->status = "Running " + entry->tool + "...";
+    } else {
+      stream->status.clear();
+    }
+  };
+  hooks.approve = [stream, autoApprove, approvals](const agents::Call& call) -> int {
+    const std::string policy = approvals.is_object() ? approvals.value(call.name, "ask") : "ask";
+    if (policy == "never") return agents::Deny;
+    if (autoApprove || policy == "always") return agents::Allow;
+    std::unique_lock<std::mutex> lock(stream->mutex);
+    while (true) {
+      for (const ToolCall& t : stream->toolCalls) {
+        if (t.id == call.id && t.decision != 0) {
+          return t.decision == agents::Deny ? agents::Deny : agents::Allow;
+        }
+      }
+      if (stream->cancel.load()) return agents::Deny;
+      stream->approvalCv.wait_for(lock, std::chrono::milliseconds(200));
+    }
+  };
+  hooks.invoke = [clients, byName](const agents::Call& call) {
+    agents::ToolOutcome out;
+    auto spec = byName.find(call.name);
+    if (spec == byName.end()) {
+      out.error = "unknown tool '" + call.name + "'";
+      return out;
+    }
+    auto client = clients.find(spec->second.serverId);
+    if (client == clients.end() || !client->second || !client->second->connected()) {
+      out.error = "server '" + spec->second.serverName + "' is not connected";
+      return out;
+    }
+    mcp::CallResult result = client->second->callTool(spec->second.tool, call.args, 120);
+    out.durationMs = result.durationMs;
+    if (!result.ok) {
+      out.error = result.error;
+      return out;
+    }
+    out.text = result.text;
+    out.isError = result.isError;
+    return out;
+  };
+  hooks.onUsage = [stream](const Json& usage) {
+    std::lock_guard<std::mutex> lock(stream->mutex);
+    stream->usage = usage;
+  };
+  return hooks;
+}
+
+void App::startToolStream(const std::string& assistantId, const std::string& model) {
+  auto stream = std::make_shared<Stream>();
+  stream->chatId = chat.id;
+  stream->messageId = assistantId;
+  stream->model = model;
+  stream->sessionId = sessionId_;
+  streams_.push_back(stream);
+  timings[assistantId] = MessageTiming{core::nowMillis(), 0.0, 0.0};
+
+  Json payload = buildCompletionPayload(assistantId, model);
+  agents::LoopConfig config = baseToolConfig(model);
+  config.messages = payload["messages"];
+  config.maxRounds = std::max(1, settings().extra.value("mcpMaxRounds", 8));
 
   lastPayload = payload;
   lastPayload["tools"] = agents::toOllamaTools(config.tools);
@@ -408,7 +506,7 @@ void App::startToolStream(const std::string& assistantId, const std::string& mod
   const std::string directUrl = settings().ollamaUrl;
 
   async::runDetached([this, stream, config, clients, byName, autoApprove, approvals, directUrl] {
-    agents::LoopHooks hooks;
+    agents::LoopHooks hooks = makeToolHooks(stream, clients, byName, autoApprove, approvals);
     hooks.onDelta = [stream](const std::string& content, const std::string& reasoning) {
       std::lock_guard<std::mutex> lock(stream->mutex);
       stream->started = true;
@@ -416,86 +514,6 @@ void App::startToolStream(const std::string& assistantId, const std::string& mod
       stream->reasoning += reasoning;
       return !stream->cancel.load();
     };
-    hooks.onCallState = [stream, byName](const agents::Call& call, agents::CallState state,
-                                         const agents::ToolOutcome* outcome) {
-      std::lock_guard<std::mutex> lock(stream->mutex);
-      ToolCall* entry = nullptr;
-      for (ToolCall& t : stream->toolCalls) {
-        if (t.id == call.id) entry = &t;
-      }
-      if (!entry) {
-        ToolCall fresh;
-        fresh.id = call.id;
-        fresh.qualifiedName = call.name;
-        fresh.args = call.args;
-        auto spec = byName.find(call.name);
-        if (spec != byName.end()) {
-          fresh.server = spec->second.serverName;
-          fresh.tool = spec->second.tool;
-        } else {
-          fresh.tool = call.name;
-        }
-        stream->toolCalls.push_back(fresh);
-        entry = &stream->toolCalls.back();
-      }
-      entry->state = state;
-      if (state == agents::Running) entry->startedMs = core::nowMillis();
-      if (outcome) {
-        entry->result = outcome->text;
-        entry->error = outcome->error;
-        entry->isError = outcome->isError;
-        entry->durationMs = outcome->durationMs;
-      }
-      if (state == agents::Pending) {
-        stream->status = "Waiting for approval: " + entry->tool;
-      } else if (state == agents::Running) {
-        stream->status = "Running " + entry->tool + "...";
-      } else {
-        stream->status.clear();
-      }
-    };
-    hooks.approve = [stream, autoApprove, approvals](const agents::Call& call) -> int {
-      const std::string policy = approvals.is_object() ? approvals.value(call.name, "ask") : "ask";
-      if (policy == "never") return agents::Deny;
-      if (autoApprove || policy == "always") return agents::Allow;
-      std::unique_lock<std::mutex> lock(stream->mutex);
-      while (true) {
-        for (const ToolCall& t : stream->toolCalls) {
-          if (t.id == call.id && t.decision != 0) {
-            return t.decision == agents::Deny ? agents::Deny : agents::Allow;
-          }
-        }
-        if (stream->cancel.load()) return agents::Deny;
-        stream->approvalCv.wait_for(lock, std::chrono::milliseconds(200));
-      }
-    };
-    hooks.invoke = [clients, byName](const agents::Call& call) {
-      agents::ToolOutcome out;
-      auto spec = byName.find(call.name);
-      if (spec == byName.end()) {
-        out.error = "unknown tool '" + call.name + "'";
-        return out;
-      }
-      auto client = clients.find(spec->second.serverId);
-      if (client == clients.end() || !client->second || !client->second->connected()) {
-        out.error = "server '" + spec->second.serverName + "' is not connected";
-        return out;
-      }
-      mcp::CallResult result = client->second->callTool(spec->second.tool, call.args, 120);
-      out.durationMs = result.durationMs;
-      if (!result.ok) {
-        out.error = result.error;
-        return out;
-      }
-      out.text = result.text;
-      out.isError = result.isError;
-      return out;
-    };
-    hooks.onUsage = [stream](const Json& usage) {
-      std::lock_guard<std::mutex> lock(stream->mutex);
-      stream->usage = usage;
-    };
-
     agents::LoopResult result = agents::runToolLoop(api_, directUrl, config, hooks, &stream->cancel);
     std::lock_guard<std::mutex> lock(stream->mutex);
     if (!result.ok && !stream->cancel.load()) stream->error = result.error;

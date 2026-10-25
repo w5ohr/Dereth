@@ -489,6 +489,9 @@ void App::drawChatPane() {
         ImGui::PopStyleColor();
       }
 
+      // --- agent run: goal, steps and their outcomes
+      if (message.agentRun.is_object()) drawAgentCard(message, contentWidth);
+
       // --- tool calls made on the way to this answer
       if (!message.toolCalls.empty()) drawToolCallCards(message, contentWidth);
 
@@ -1010,6 +1013,21 @@ void App::drawChatPane() {
       showFanoutPicker = true;
     }
     drawFanoutPicker();
+    ImGui::SameLine();
+    if (icons::button("agent", icons::Icon::Brain,
+                      agentMode ? "Agent mode on - the prompt is a goal: plan, act with tools, check, answer "
+                                  "(right-click for options)"
+                                : "Agent mode: plan, act with tools, check each step, answer (right-click for options)",
+                      0.0f, agentMode ? palette.accent : 0)) {
+      agentMode = !agentMode;
+      settings().extra["agentMode"] = agentMode;
+      settings().save();
+      if (agentMode && mcpConnectedCount() == 0) {
+        widgets::toastInfo("Agent mode without tools: the model plans and works in text only");
+      }
+    }
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) ImGui::OpenPopup("##agentopts");
+    drawAgentPopover();
     ImGui::SameLine();
     if (icons::button("mcp", icons::Icon::Plug,
                       mcpEnabled ? "MCP tools on - replies can call your MCP servers"

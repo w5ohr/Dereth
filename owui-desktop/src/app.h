@@ -139,6 +139,7 @@ struct Message {
   Json usage = Json::object();
   Json followUps = Json::array();
   std::vector<ToolCall> toolCalls;
+  Json agentRun;                // agent mode: goal, steps, outcome (saved as `agentRun`)
   bool streaming = false;
   // Streaming through the server (socket path): the placeholder is saved
   // with its parentId up front, since the server fills that record itself.
@@ -211,6 +212,10 @@ struct Stream {
   // setting `decision` and signalling approvalCv.
   std::vector<ToolCall> toolCalls;
   std::condition_variable approvalCv;
+  // Agent loop: the run's goal / steps / status snapshot, and the pause flag
+  // the loop polls between steps.
+  Json agentRun;
+  std::atomic<bool> paused{false};
 };
 
 // A renderable code block from a reply (HTML, SVG or Mermaid), shown live in
@@ -578,6 +583,17 @@ class App {
   std::string routedModelNote;
   std::string lastRoutedModel;
   bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
+  bool agentMode = false;                     // composer toggle, persisted as extra["agentMode"]
+  // --- agent loop (agents/agent_integration.cpp) ---------------------------
+  // "Do this until done": plan, act with tools, verify each step, answer.
+  void startAgentStream(const std::string& assistantId, const std::string& model);
+  void drawAgentCard(Message& message, float width);
+  void drawAgentPopover();                    // the "##agentopts" popup body
+  agents::LoopConfig baseToolConfig(const std::string& model);
+  agents::LoopHooks makeToolHooks(const std::shared_ptr<Stream>& stream,
+                                  const std::map<std::string, std::shared_ptr<mcp::Client>>& clients,
+                                  const std::map<std::string, agents::ToolSpec>& byName,
+                                  bool autoApprove, const Json& approvals);
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
   float composerTextHeight = 46.0f;           // text area height the composer used last frame
   bool showDocument = false;

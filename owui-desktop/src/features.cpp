@@ -325,6 +325,11 @@ void App::drawPalette() {
   add("Open this chat as a floating mini window", "command", [this] { openChatInNewWindow(chat.id, true); });
   add("Float this window on top", "command", [this] { toggleFloating(); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
+  add("Toggle agent mode", "command", [this] {
+    agentMode = !agentMode;
+    settings().extra["agentMode"] = agentMode;
+    settings().save();
+  });
   add("Capture whole screen to chat", "command", [this] { captureScreenToChat(false); });
   add("Export chat as Markdown", "command", [this] { exportChat("md"); });
   add("Export chat as HTML", "command", [this] { exportChat("html"); });

@@ -200,6 +200,7 @@ LoopResult runToolLoop(api::Client& api, const std::string& directOllamaUrl, con
     Json payload{{"model", config.model}, {"messages", messages}, {"stream", true}};
     if (!tools.empty()) payload["tools"] = tools;
     if (config.options.is_object() && !config.options.empty()) payload["options"] = config.options;
+    if (!config.format.is_null()) payload["format"] = config.format;
 
     std::string roundContent;
     Json toolCalls = Json::array();

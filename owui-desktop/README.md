@@ -248,6 +248,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Agent mode:** the brain icon in the composer turns the prompt into a
+  goal: the model plans it into steps (JSON, capped), carries each step out
+  with the MCP tool loop, judges its own outcome and retries with the
+  feedback, then writes the answer. A step card shows the plan live with
+  Pause (between steps) and Stop; each step opens to its outcome and the
+  checker's objection; tool calls show as the usual approval cards. The run is
+  saved with the message. Right-click the icon for the step cap, attempts per
+  step and the outcome check. `Open WebUI --agenttest` checks the plan and
+  verdict parsers offline.
 - **MCP:** connect Model Context Protocol servers (stdio or Streamable HTTP;
   import your Claude Desktop or Cursor config) under Tools ▸ MCP, switch the
   plug icon on in the composer, and the model can call their tools. Each call
