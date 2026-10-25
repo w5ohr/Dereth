@@ -1926,3 +1926,41 @@ negative prompt and the checkpoint name and toasted the seed note. Not covered: 
 generation path itself (no image backend on the scratch server - `galleryAdd` and the
 chunk writer are exercised by the self-test only), delete, Open / Reveal, and sizes
 outside the generator's list (256x256 left the size combo as it was).
+
+2026-10-25 108 (knowledge graph): `src/core/kgraph.*` (`extractEntities`: #tags, `code`
+terms, capitalised runs of 1-4 adjacent words with a stop list (incl. weekdays and their
+plurals), a lone capitalised sentence-start dropped unless it is an acronym, dedupe by
+lower case in order of appearance; `build`: one node per source (memory / note /
+knowledge, a memory's cut-down title is never mined since it is a slice of the text),
+entity nodes weighted by mentions with the source ids that mention them, minMentions /
+maxEntities (most mentioned kept, ties by label) / coOccurrence options, source-entity
+edges and entity-entity co-occurrence edges weighted by shared sources; `seedLayout`
+(entities on a ring, sources inside); `layoutStep` (repulsion, springs along edges,
+pull to the centre, damping, pinned nodes fixed, clamped to the box, returns the
+largest move); `neighbours`, `stats`, `toJson`). `src/graph_pane.cpp`: a Tools "Graph"
+tab after Local index; `loadKnowledgeGraph` fetches memories, notes (data.content md /
+html / string) and every knowledge base's files - Open WebUI 0.12 returns `files: null`
+on the base and lists them paged at /api/v1/knowledge/{id}/files, so that is the
+fallback - with each file's extracted text from /api/v1/files/{id} data.content; the
+canvas runs up to 400 layout steps (4 per frame) until the largest move drops under
+0.3, draws edges (co-occurrence thinner; the selected node's links in the accent),
+entity circles sized by mentions, source squares coloured by kind, labels on a dim
+backing, a legend, hover tooltips, click to select (neighbours lit, the rest dimmed),
+drag to move and pin, drag the background to pan; the side column lists the most
+mentioned entities, or the selected entity's sources and companions, or the selected
+source's text and mentions; Min mentions / Max entities / Links between entities
+rebuild; Shake reseeds; Export JSON; Find dims non-matches. `openGraphTab` +
+`toolsTabRequest` let the palette land on the tab (the forced selection is held two
+frames, since the previously selected tab reports itself selected in the same frame).
+`--graphtest` runs 8 offline checks. Verified on a scratch Open WebUI 0.12.3 seeded
+with four memories, two notes and a knowledge base holding foghorn.txt: the tab read
+"4 memories, 2 notes, 1 knowledge files - 9 entities, 7 sources, 52 links", the graph
+drew the entities (Beacon Point 5, Captain Reyes 4, Winch Room 4, Ada Lovelace 3,
+Harbour Ferry 3, Foghorn 2, Fresnel Lens 2, #maintenance, #visitors) around the
+sources; clicking Captain Reyes lit its links and listed two memories, a note and the
+knowledge file plus seven companions; clicking the knowledge file showed its extracted
+text and six mentions. Two defects fixed on the way: entities were mined from the
+truncated memory titles ("Harbour Ferr", "Winch"), and the palette's tab switch was
+overridden by the old tab in the same frame. Not covered: dragging a node and panning
+beyond code review, Export JSON, Find, the option sliders live (self-test only), and
+very large graphs (the layout is O(n^2) per step).

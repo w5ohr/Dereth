@@ -20,9 +20,10 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Traffic, Evaluate, Health, Models };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, Graph, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Traffic, Evaluate, Health, Models };
 
 Tab gTab = Tab::Command;
+int gForceFrames = 0;   // frames left to hold a tab the palette asked for
 
 // Command tab: autoscroll only when new output arrives, so the user can
 // scroll back through a long listing without being yanked to the bottom.
@@ -61,6 +62,7 @@ const char* tabName(Tab tab) {
     case Tab::TestLoop: return "Test loop";
     case Tab::Audit: return "Audit";
     case Tab::Traffic: return "Traffic";
+    case Tab::Graph: return "Graph";
     case Tab::Evaluate: return "Evaluate";
     case Tab::Health: return "Health";
     case Tab::Models: return "Models";
@@ -213,14 +215,20 @@ void App::drawToolsPane() {
   const auto& palette = theme::palette();
 
   if (ImGui::BeginTabBar("##toolstabs")) {
-    for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex,
+    if (toolsTabRequest == "graph") {
+      gTab = Tab::Graph;
+      gForceFrames = 2;
+      toolsTabRequest.clear();
+    }
+    for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex, Tab::Graph,
                     Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop, Tab::Audit, Tab::Traffic, Tab::Evaluate, Tab::Health, Tab::Models}) {
-      if (ImGui::BeginTabItem(tabName(tab))) {
-        gTab = tab;
+      if (ImGui::BeginTabItem(tabName(tab), nullptr, gForceFrames > 0 && gTab == tab ? ImGuiTabItemFlags_SetSelected : 0)) {
+        if (gForceFrames == 0) gTab = tab;
         ImGui::EndTabItem();
       }
     }
     ImGui::EndTabBar();
+    if (gForceFrames > 0) --gForceFrames;
   }
   ImGui::Dummy(ImVec2(0, 8));
 
@@ -591,6 +599,9 @@ void App::drawToolsPane() {
       break;
     case Tab::Traffic:
       drawTrafficSection(width);
+      break;
+    case Tab::Graph:
+      drawGraphSection(width);
       break;
     case Tab::Evaluate:
       drawEvalSection(width);

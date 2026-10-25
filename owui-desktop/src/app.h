@@ -848,6 +848,12 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- knowledge graph (graph_pane.cpp) -------------------------------------
+  void loadKnowledgeGraph();
+  void drawGraphSection(float width);
+  void openGraphTab();
+  std::string toolsTabRequest;   // a tab name the Tools pane switches to on its next draw
+
   // --- image gallery with generation metadata (image_gallery.cpp) -----------
   void galleryAdd(const std::string& bytes, imagemeta::Meta meta);   // writes the PNG text chunks, indexes it
   int galleryRescan();                                               // PNGs dropped into the folder

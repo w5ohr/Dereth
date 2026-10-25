@@ -764,6 +764,17 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Rescan folder" reads their metadata. `Open WebUI --imagemetatest` covers
   the PNG chunk reader / writer (CRCs checked), both foreign formats, the
   index and the filter.
+- **Knowledge graph:** Tools ▸ Graph (or the palette) pulls names, terms,
+  #tags and `code` out of your memories, notes and knowledge-base files
+  (capitalised runs of up to four words, stop words and sentence-starts
+  dropped), links each entity to the sources that mention it and to the
+  entities it shares a source with, and draws the result as a node graph
+  laid out by a small force simulation: drag nodes (they stay put), drag the
+  background to pan, hover for mention counts, click an entity for its
+  sources and companions or a source for its text, find a node by name, set
+  the minimum mentions and the entity cap, switch the entity-entity links
+  off, Shake to relayout, Export JSON. `Open WebUI --graphtest` covers the
+  extraction, the graph build, the options and the layout.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.
