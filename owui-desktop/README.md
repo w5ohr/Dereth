@@ -750,6 +750,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   them. A reference layout with no chat remembered opens the most recent
   other chat. `Open WebUI --layouttest` covers the built-ins, the record,
   saving and the summaries.
+- **Image gallery with generation metadata:** every image the Images pane
+  generates is saved under support/images with its prompt, negative prompt,
+  model, size, seed (when the backend reports one) and engine written into
+  the PNG as text chunks, and listed in a gallery under the generator: a
+  grid of thumbnails with a size slider, search over prompts / models /
+  seeds, favourites (a star on the tile, "Favourites only"), Reuse (puts the
+  prompt, negative prompt, model and size back into the generator), Open,
+  Reveal in Finder, Copy parameters (an Automatic1111-style line) and
+  delete, plus a details card for the selected image. Drop PNGs from
+  Automatic1111 (its `parameters` chunk) or ComfyUI (its `prompt` graph:
+  seed, checkpoint, size, positive and negative text) into the folder and
+  "Rescan folder" reads their metadata. `Open WebUI --imagemetatest` covers
+  the PNG chunk reader / writer (CRCs checked), both foreign formats, the
+  index and the filter.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

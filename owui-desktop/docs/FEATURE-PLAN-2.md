@@ -1891,3 +1891,38 @@ Not covered: the window-size part of apply beyond the self-test (the test window
 already that size), float-on-top within a layout, artifacts / tree columns via a layout,
 and detachable panes - those remain the existing "open this chat in a new window"
 command, not part of a layout.
+
+2026-10-25 117 (generation metadata): `src/core/imagemeta.*` (PNG chunk walk; `readText`
+reads tEXt, zTXt and iTXt (zlib for the compressed ones); `writeText` rewrites the file
+with iTXt chunks after IHDR, dropping older chunks with the same keywords, CRCs via zlib;
+`toText`/`fromText` for our keywords prompt, negative_prompt, model, size, seed, engine,
+created, parameters; A1111 `parameters` parsing (prompt, Negative prompt:, the Seed /
+Size / Model fields of the settings line); ComfyUI `prompt` graph parsing (KSampler
+seed / noise_seed, CheckpointLoaderSimple ckpt_name, EmptyLatentImage size, the two
+CLIPTextEncode texts as positive and negative); `parametersLine`; gallery Item index
+to/from JSON, `fileNameFor`, `filter` newest-first with favourites-only and a caseless
+query, `pngSize`). `src/image_gallery.cpp`: support/images + index.json; `galleryAdd`
+writes the bytes with the metadata chunks and indexes them (jpg kept as is);
+`galleryRescan` adds files found in the folder (metadata read from PNGs) and drops
+entries whose files went; `drawImageGallery` - search, Favourites only, tile size,
+Rescan, Open folder, the grid (thumbnails through the image cache keyed file://, star
+overlay, selection frame, tooltip with the prompt, ★ / Reuse / Open / x under each) and
+the selected image's card (time, size, Reveal in Finder, Copy parameters, prompt,
+negative, model, size, seed or "not reported by the backend", engine). `images_pane.cpp`:
+after a generation every result's bytes are fetched on the worker and saved with the
+form's prompt / negative / model / size, the server's engine, and `seed` /
+`revised_prompt` when the result object carries them; `imageReusePrompt` fills the
+generator; the gallery section sits under the results; palette entry.
+`--imagemetatest` runs 11 offline checks (a 2x1 PNG is assembled in the test and every
+chunk CRC re-verified after writing). Verified on a scratch home with no image backend:
+three PNGs written into the folder by a script (an Automatic1111 `parameters` chunk, a
+ComfyUI `prompt` graph, one without text) were picked up by the first draw's rescan as
+"GALLERY (3)" with thumbnails; Reuse was disabled on the plain one; selecting the boat
+showed prompt "a red wooden boat on a calm lake at sunrise, soft light", negative
+"lowres, text, watermark", model dreamshaper_8, size 256x256; its star wrote
+favourite: true to index.json (seeds 31337 and 4242424242 and both models were in the
+index); typing "fox" left only the ComfyUI image; Reuse on it filled the prompt, the
+negative prompt and the checkpoint name and toasted the seed note. Not covered: the
+generation path itself (no image backend on the scratch server - `galleryAdd` and the
+chunk writer are exercised by the self-test only), delete, Open / Reveal, and sizes
+outside the generator's list (256x256 left the size combo as it was).

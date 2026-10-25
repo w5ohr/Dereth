@@ -12,6 +12,7 @@
 #include <set>
 
 #include "core/accessibility.h"
+#include "core/imagemeta.h"
 #include "core/layouts.h"
 #include "core/logprobs.h"
 #include "core/outputctl.h"
@@ -846,6 +847,12 @@ class App {
   accessibility::Prefs accessibilityPrefs() const;
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
+
+  // --- image gallery with generation metadata (image_gallery.cpp) -----------
+  void galleryAdd(const std::string& bytes, imagemeta::Meta meta);   // writes the PNG text chunks, indexes it
+  int galleryRescan();                                               // PNGs dropped into the folder
+  void drawImageGallery(float width);
+  void imageReusePrompt(const imagemeta::Meta& meta);                // images_pane.cpp: fills the generator
 
   // --- layout presets (layout_presets.cpp) ----------------------------------
   bool sideColumnBelow = false;   // the side column under the transcript instead of beside it

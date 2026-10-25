@@ -1,6 +1,8 @@
 // Images: text-to-image generation through the server's configured backend.
+#include "app.h"
 #include "core/async.h"
 #include "core/common.h"
+#include "core/imagemeta.h"
 #include "pane_common.h"
 #include "platform.h"
 #include "ui/icons.h"
@@ -23,6 +25,17 @@ Json gResults = Json::array();
 const char* kSizes[] = {"512x512", "1024x1024", "1024x1792", "1792x1024"};
 
 }  // namespace
+
+void App::imageReusePrompt(const imagemeta::Meta& meta) {
+  gPrompt = meta.prompt;
+  gNegative = meta.negative;
+  if (!meta.model.empty()) gModel = meta.model;
+  for (int i = 0; i < IM_ARRAYSIZE(kSizes); ++i) {
+    if (meta.size == kSizes[i]) gSizeIndex = i;
+  }
+  pane = Pane::Images;
+  widgets::toastInfo("Prompt put back into the generator" + std::string(meta.seed.empty() ? "" : " (seed " + meta.seed + " - the server picks its own)"));
+}
 
 void App::drawImagesPane() {
   if (!gLoaded) {
@@ -95,13 +108,37 @@ void App::drawImagesPane() {
                 {"size", kSizes[gSizeIndex]}};
       if (!gModel.empty()) form["model"] = gModel;
       if (!core::trim(gNegative).empty()) form["negative_prompt"] = core::trim(gNegative);
-      async::run([this, form] {
+      const std::string engine = imageConfig.value("engine", "");
+      async::run([this, form, engine] {
         api::Result res = api_.generateImages(form);
-        async::post([res] {
+        // Every result goes into the gallery with what we know about it.
+        std::vector<std::pair<std::string, imagemeta::Meta>> saved;
+        if (res.ok) {
+          const Json list = res.data.is_array() ? res.data : res.data.value("data", Json::array());
+          for (const auto& result : list) {
+            const std::string url = result.is_string() ? result.get<std::string>() : result.value("url", "");
+            if (url.empty()) continue;
+            imagemeta::Meta meta;
+            meta.prompt = form.value("prompt", "");
+            meta.negative = form.value("negative_prompt", "");
+            meta.model = form.value("model", "");
+            meta.size = form.value("size", "");
+            meta.engine = engine;
+            if (result.is_object()) {
+              if (result.contains("seed")) meta.seed = result["seed"].is_string() ? result["seed"].get<std::string>() : result["seed"].dump();
+              if (result.contains("revised_prompt") && result["revised_prompt"].is_string()) meta.prompt = result["revised_prompt"];
+            }
+            saved.push_back({fetchImageBytes(url), meta});
+          }
+        }
+        async::post([this, res, saved] {
           gGenerating = false;
           if (res.ok) {
             gResults = res.data.is_array() ? res.data : res.data.value("data", Json::array());
-            widgets::toast(widgets::ToastLevel::Success, "Image ready");
+            for (const auto& [bytes, meta] : saved) {
+              if (!bytes.empty()) galleryAdd(bytes, meta);
+            }
+            widgets::toast(widgets::ToastLevel::Success, saved.empty() ? "Image ready" : "Image ready - saved to the gallery with its prompt");
           } else {
             widgets::toastError("Generation failed: " + api::errorMessage(res));
           }
@@ -163,6 +200,8 @@ void App::drawImagesPane() {
     }
     ImGui::NewLine();
   }
+
+  drawImageGallery(width);
 
   if (!imageConfig.empty()) {
     widgets::sectionHeader("BACKEND");

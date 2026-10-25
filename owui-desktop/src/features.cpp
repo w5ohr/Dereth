@@ -356,6 +356,7 @@ void App::drawPalette() {
     add("Layout: " + l.name + "  (" + layouts::summary(l) + ")", "view", [this, l] { applyLayout(l); });
   }
   add("Save the current layout as...", "settings", [this] { pane = Pane::Settings; });
+  add("Image gallery (generated images, prompts, favourites)", "images", [this] { pane = Pane::Images; });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
   add("Propose memories from this reply", "command", [this] {
