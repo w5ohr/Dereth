@@ -475,9 +475,12 @@ with a seeded ten-message, four-leaf Lisbon chat: the tree drew fitted with the 
 "10 messages - 4 leaves - 3 dead ends"; clicking the dead "A slower version" leaf
 switched the transcript to that branch and re-highlighted the path; the context menu
 showed Jump / Copy / Delete; "Delete this message" dropped the count to 9 with a toast
-and the server lost exactly that message. Not GUI-verified: "Prune N dead branches"
-(the user had the machine; it loops the same `pruneSubtree`) and the delete-before-save
-ordering (built after the single-delete run showed the server's currentId moved).
+and the server lost exactly that message. "Prune N dead branches" first crashed
+(`std::out_of_range`: it deleted messages inside the tree column's own frame, after the
+layout had been built, so the node loop looked them up again) - the prune now ends the
+frame before anything else is drawn; rerun on a fresh seed it left the four messages of
+the current branch locally and on the server, with the server's currentId still on the
+leaf (the delete-before-save ordering), and one summary toast.
 Observation, not changed: any prompt with two or more answers renders as fan-out
 columns in the transcript until one is kept (the fan-out item's design), so a seeded
 or regenerated branch shows "2 answers - keep one" even when it was never a fan-out.

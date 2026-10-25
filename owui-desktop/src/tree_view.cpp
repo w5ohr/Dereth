@@ -148,7 +148,7 @@ void App::jumpToNode(const std::string& id) {
 
 // Removes `id` and everything under it, locally and on the server. A subtree
 // that holds the current branch moves the transcript to the node's parent.
-void App::pruneSubtree(const std::string& id) {
+void App::pruneSubtree(const std::string& id, bool quiet) {
   auto it = chat.messages.find(id);
   if (it == chat.messages.end()) return;
   std::vector<std::string> doomed;
@@ -199,8 +199,10 @@ void App::pruneSubtree(const std::string& id) {
       });
     });
   }
-  widgets::toast(widgets::ToastLevel::Success,
-                 "Pruned " + std::to_string(doomed.size()) + (doomed.size() == 1 ? " message" : " messages"));
+  if (!quiet) {
+    widgets::toast(widgets::ToastLevel::Success,
+                   "Pruned " + std::to_string(doomed.size()) + (doomed.size() == 1 ? " message" : " messages"));
+  }
 }
 
 // Every subtree hanging off the current branch, in one go.
@@ -222,10 +224,12 @@ void App::pruneDeadBranches() {
   size_t total = 0;
   for (const std::string& id : dead) {
     const size_t before = chat.messages.size();
-    pruneSubtree(id);
+    pruneSubtree(id, true);
     total += before - chat.messages.size();
   }
-  (void)total;
+  widgets::toast(widgets::ToastLevel::Success,
+                 "Pruned " + std::to_string(dead.size()) + (dead.size() == 1 ? " branch, " : " branches, ") +
+                     std::to_string(total) + (total == 1 ? " message" : " messages"));
 }
 
 // ---------------------------------------------------------------- drawing
@@ -274,11 +278,12 @@ void App::drawTreeColumn(float width) {
   }
   widgets::endDisabled(dead == 0 || !streams_.empty());
   ImGui::PopStyleVar();
+  bool pruneAll = false;
   if (ImGui::BeginPopup("##prunedead")) {
     ImGui::TextUnformatted("Delete every branch off the current path?");
     widgets::dimText("Messages on other branches are removed from the server too.");
     if (widgets::primaryButton("Prune", ImVec2(90, 0))) {
-      pruneDeadBranches();
+      pruneAll = true;
       ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
@@ -288,6 +293,13 @@ void App::drawTreeColumn(float width) {
   widgets::dimText("%zu messages - %d %s - %d dead %s", chat.messages.size(), leaves,
                    leaves == 1 ? "leaf" : "leaves", dead, dead == 1 ? "end" : "ends");
   ImGui::Unindent(10.0f);
+  if (pruneAll) {
+    // The layout above still names the pruned messages: draw nothing more
+    // this frame, the next one lays the tree out afresh.
+    pruneDeadBranches();
+    ImGui::EndChild();
+    return;
+  }
 
   if (chat.messages.empty()) {
     ImGui::Indent(10.0f);

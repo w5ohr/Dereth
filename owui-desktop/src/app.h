@@ -432,7 +432,7 @@ class App {
   // the branches the conversation left behind.
   void drawTreeColumn(float width);
   void jumpToNode(const std::string& id);
-  void pruneSubtree(const std::string& id);     // the node and everything under it
+  void pruneSubtree(const std::string& id, bool quiet = false);   // the node and everything under it
   void pruneDeadBranches();                     // every subtree off the current path
 
   // --- fan-out (fanout.cpp) -------------------------------------------------
