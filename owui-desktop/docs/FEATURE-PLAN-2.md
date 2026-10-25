@@ -688,3 +688,27 @@ without moving it, the pill appeared above the text, and clicking it jumped to t
 live end; scrolling a finished chat to the top, opening another chat and coming back
 restored the top instead of the end. Not done from the item's wording: the per-token
 fade-in (the markdown renderer has no per-glyph alpha yet) - the item stays open for it.
+
+2026-10-24 III (76 context strategy picker): `src/core/contextfit.{h,cpp}` (an app-free
+planner: drop-oldest, sliding window of N user turns, or a rolling summary standing in for
+a covered prefix; system messages and the newest user turn are never cut; a summary
+larger than what it replaces is ignored) and `src/context_strategy.cpp` (per-chat
+strategy in chat.raw["desktop_context"] with a settings default; the budget is the model
+window minus max_tokens (or 1024) minus the system prompt; `applyContextPlan` runs inside
+`buildCompletionPayload` on the message ids, so every path - server task, HTTP,
+continue, private - gets the trimmed list and a toast; `maybeSummariseContext` runs after
+a turn that cut six or more messages under the summary strategy, asks the chat's model
+(non-streaming, /api/chat/completions) for a 300-word digest of the old summary plus the
+newly cut turns, strips a <think> block, and stores {upto, text, tokens} in
+chat.raw["desktop_context_summary"]; the ctx label in the header is now a button that
+opens a popover: three radios, the window's turn slider, the summary on file, "use as
+default", and a preview table of the branch with the messages the next send would cut
+greyed and prefixed "-"). `--contexttest` runs 13 offline checks. Verified against a
+scratch server with qwen3:8b: a seeded 16-message chat at ~56k tokens against a 40k
+window showed "6 of 16 messages would be left out" in the preview; choosing the summary
+and asking about turn 1 was answered wrongly from the remaining turns (expected - no
+summary yet) while the first overflow produced a 301-token summary that named every
+folded topic and year; the next question went out with "6 of 19 messages folded into the
+summary" and the reply read the correct fact back from it; the trim toast appeared on
+each send. Fixed on the way: the sliding window counted the newest user message as a
+turn boundary one step early (kept one turn too few).

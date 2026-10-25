@@ -662,9 +662,11 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
   std::reverse(path.begin(), path.end());
 
   Json fileRefs = Json::array();
+  std::vector<std::string> messageIds;
   for (const std::string& id : path) {
     const Message& message = chat.messages.at(id);
     if (message.role == "assistant" && message.content.empty()) continue;
+    messageIds.push_back(id);
 
     Json entry{{"role", message.role}};
     bool hasImages = false;
@@ -698,6 +700,13 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
     prefill["reasoning_content"] = prefill["thinking"];
     messages.push_back(prefill);
   }
+
+  // Context strategy: once the branch outgrows the model's window, drop,
+  // window or summarise the oldest turns (the continuation prefix, if any,
+  // rides along as the newest message and is never cut).
+  if (continueFromId == assistantId && !assistant.content.empty()) messageIds.push_back(assistantId);
+  const std::string trimmed = applyContextPlan(&messages, messageIds);
+  if (!trimmed.empty()) contextTrimNote_ = trimmed;
 
   // Project mode: the pinned folder's tree and ticked files ride along as a
   // system message so every turn sees the code being worked on.
@@ -859,6 +868,10 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   }
 
   Json payload = buildCompletionPayload(assistantId, model);
+  if (!contextTrimNote_.empty()) {
+    widgets::toastInfo(contextTrimNote_ + " (context)");
+    contextTrimNote_.clear();
+  }
   const bool useStreaming = settings().streamResponses;
   lastPayload = payload;
   const bool useLocalIndex = localIndexEnabled;
@@ -1276,6 +1289,7 @@ void App::afterCompletion(const std::string& assistantId) {
     refreshPrivateChats();
     return;
   }
+  maybeSummariseContext();
   const std::string chatId = chat.id;
   const std::string model = message.model;
   const Json payload{{"model", model},

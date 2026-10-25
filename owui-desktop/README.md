@@ -248,6 +248,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Context strategy:** click the `ctx` figure in the chat header to choose
+  what happens when a chat outgrows the model's window - drop the oldest
+  turns, keep a sliding window of recent turns, or fold the oldest turns into
+  a rolling summary the model keeps seeing - and preview exactly which
+  messages the next send would leave out. System messages and the newest
+  turn are always kept; a toast reports every trimmed send. `Open WebUI
+  --contexttest` checks the planner offline.
 - **Reading while it streams:** the transcript follows new text only while
   you are at the bottom; scroll up and it stays put, with a "New text ↓" pill
   to jump back. Each chat remembers where you were when you return to it.

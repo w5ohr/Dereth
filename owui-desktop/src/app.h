@@ -18,6 +18,7 @@
 #include "api/client.h"
 #include "core/pty.h"
 #include "core/promptvars.h"
+#include "core/contextfit.h"
 #include "core/redact.h"
 #include "core/settings.h"
 #include "core/socketio.h"
@@ -437,6 +438,23 @@ class App {
   void drawPluginsSection(float width);
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
+
+  // --- context strategy (context_strategy.cpp) ------------------------------
+  // What goes to the model once the chat outgrows its window: drop oldest,
+  // sliding window, or a rolling summary; a popover previews the next send.
+  Json& contextConfig();                       // chat.raw["desktop_context"]
+  std::string contextStrategyKey() const;      // "drop" | "window" | "summary"
+  int contextWindowTurns() const;
+  int contextBudget() const;
+  Json contextSummary() const;                 // {upto, text, tokens} or null
+  contextfit::Plan planContext(const Json& messages, const std::vector<std::string>& ids) const;
+  std::string applyContextPlan(Json* messages, const std::vector<std::string>& ids);
+  void maybeSummariseContext();
+  void drawContextPopover();                   // the "##contextplan" popup body
+  Json lastContextPlan;
+  std::string contextTrimNote_;              // shown as a toast once the send is out
+  bool contextSummaryPending_ = false;
+  bool contextDefaultTouched_ = false;
 
   // --- private chats (private_chats.cpp) ------------------------------------
   // "local-" chats never reach the server: encrypted files in support/private,

@@ -256,6 +256,12 @@ void App::drawChatPane() {
         ImGui::Text("~%.1fk / %dk ctx", used / 1000.0, window / 1000);
       }
       ImGui::PopStyleColor();
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        ImGui::SetTooltip("Context strategy: what is dropped, windowed or summarised when the chat\noutgrows the model's window - click to choose and preview");
+      }
+      if (ImGui::IsItemClicked()) ImGui::OpenPopup("##contextplan");
+      drawContextPopover();
     }
   }
   ImGui::EndChild();
