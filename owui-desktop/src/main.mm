@@ -531,6 +531,7 @@ int runLspSelfTest();
 int runNotebookSelfTest();
 int runEmojiSelfTest();
 int runCrashSelfTest();
+int runUpdateSelfTest();
 int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
@@ -594,6 +595,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--notebooktest") return runNotebookSelfTest();
     if (std::string(argv[i]) == "--emojitest") return runEmojiSelfTest();
     if (std::string(argv[i]) == "--crashtest") return runCrashSelfTest();
+    if (std::string(argv[i]) == "--updatetest") return runUpdateSelfTest();
     if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.

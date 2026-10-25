@@ -9,7 +9,11 @@ cd "$(dirname "$0")/.."
 APP="${1:-build/Open WebUI.app}"
 [ -d "$APP" ] || { echo "no app at $APP - build first" >&2; exit 2; }
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
-DIST=build/dist
+DIST="${OWUI_DIST:-build/dist}"
+# Where the release assets will live (the appcast's enclosure URL).
+BASE="${OWUI_DOWNLOAD_BASE:-https://github.com/w5ohr/Dereth/releases/download/owui-desktop-v$VERSION}"
+# Release notes in Markdown: OWUI_RELEASE_NOTES, else packaging/release-notes/<version>.md.
+NOTES_FILE="${OWUI_RELEASE_NOTES:-packaging/release-notes/$VERSION.md}"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/owui-dmg.XXXXXX")
 DMG="$DIST/Open-WebUI-$VERSION.dmg"
 mkdir -p "$DIST"
@@ -48,8 +52,28 @@ rmdir "$MNT"
 trap - EXIT
 
 SHA=$(shasum -a 256 "$DMG" | cut -d' ' -f1)
+LENGTH=$(stat -f %z "$DMG")
+BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist")
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA/" packaging/homebrew/open-webui-desktop.rb > "$DIST/open-webui-desktop.rb"
+NOTES=""
+[ -f "$NOTES_FILE" ] && NOTES=$(cat "$NOTES_FILE")
+cat > "$DIST/appcast.xml" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:owui="https://github.com/w5ohr/Dereth/tree/main/owui-desktop">
+  <channel>
+    <title>Open WebUI Desktop</title>
+    <item>
+      <title>Version $VERSION</title>
+      <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[$NOTES]]></description>
+      <enclosure url="$BASE/Open-WebUI-$VERSION.dmg" sparkle:version="$BUILD" sparkle:shortVersionString="$VERSION" length="$LENGTH" owui:sha256="$SHA" type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
+XML
 echo "$DMG"
 echo "  version $VERSION, $(du -h "$DMG" | cut -f1 | tr -d ' '), sha256 $SHA"
 echo "  contents checked: Open WebUI.app (signature verifies, runs) + Applications link"
 echo "  cask: $DIST/open-webui-desktop.rb"
+echo "  appcast: $DIST/appcast.xml (download from $BASE)"

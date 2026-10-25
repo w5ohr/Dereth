@@ -363,6 +363,10 @@ void App::drawPalette() {
   add("Stop the language servers", "command", [this] { async::run([this] { stopLspServers(); }); });
   add("Notebook (Python cells, prompts, .ipynb)", "tools", [this] { openNotebookTab(); });
   add("Crash reports", "settings", [this] { pane = Pane::Settings; });
+  add("Check for updates", "command", [this] {
+    pane = Pane::Settings;
+    checkForUpdates(true);
+  });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
   add("Propose memories from this reply", "command", [this] {

@@ -480,6 +480,9 @@ void App::drawSettingsPane() {
     }
   }, width);
 
+  widgets::sectionHeader("UPDATES");
+  card("updates", [&] { drawUpdatesSection(width); }, width);
+
   widgets::sectionHeader("CRASH REPORTS");
   card("crashes", [&] { drawCrashSection(width); }, width);
 

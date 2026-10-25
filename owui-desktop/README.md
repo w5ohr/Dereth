@@ -848,6 +848,19 @@ Things a browser tab can't do, plus the workflow features built on top:
   compressed, verified, mounted and run to check it) and a filled-in Homebrew
   cask from `packaging/homebrew/`. `Open WebUI --crashtest` crashes child
   processes four ways and reads the reports back.
+- **Auto-update:** Settings ▸ Updates checks an appcast (Sparkle's RSS
+  format; by default the latest GitHub release's `appcast.xml`) once a day
+  or on demand, shows the newest version with its size and Markdown release
+  notes, and Install and relaunch downloads the DMG, checks its size and
+  SHA-256 against the feed, mounts it, checks the app inside is this same
+  app at the promised version with a valid signature, swaps it into place
+  and relaunches. The version it replaced is kept, so "Roll back to ..."
+  (in the card and on the "Updated to ..." sheet shown after relaunching)
+  puts it back, and rolling back is itself reversible. Skip this version
+  hides one release. Feeds must be HTTPS (or this Mac), and every item needs
+  a SHA-256. `scripts/make-dmg.sh` writes the `appcast.xml` beside the DMG
+  and cask. `Open WebUI --updatetest` parses feeds and does a real install
+  and rollback from a DMG.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

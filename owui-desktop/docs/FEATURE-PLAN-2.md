@@ -2227,3 +2227,59 @@ GPU reports none (Metal itself worked there: the working-set check passed). Fixe
 a5bea3a9: the check stays strict on real hardware and accepts "unknown" (-1) only when
 kern.hv_vmm_present says it is a VM. mcptest took 76 s on the runner (6 s here), well
 inside the 180 s limit.
+
+2026-10-25 129 (auto-update) - delta updates not done (full DMGs only). `src/core/updater.*`:
+`parseAppcast` (Sparkle RSS: items with title, description incl. CDATA,
+sparkle:releaseNotesLink, pubDate, sparkle:minimumSystemVersion, and the enclosure's
+url / length / sparkle:version / sparkle:shortVersionString - as elements or enclosure
+attributes - plus an `owui:sha256` attribute), `problem` (refuses items with no 64-hex
+SHA-256, plain http to anything but localhost, or a minimum macOS above this one), `pick`
+(newest installable item above the current version, minus skipped ones), `compare`,
+`sha256Hex` / `sha256File` (CommonCrypto), `bundleValue` (PlistBuddy), and
+`installFromDmg`: mount read-only with -nobrowse, find the .app, require the expected
+bundle id and version and a passing `codesign --verify --deep`, ditto it beside the
+target without extended attributes, move the current bundle into the backup folder
+(rename, falling back to ditto + remove across volumes), rename the new one into place
+- putting the old one back if that fails - and detach; `rollback` swaps the backup and
+the target through a third name so the version rolled back from becomes the backup;
+`backupVersion`. `src/updater_pane.mm`: the feed (extra["updates"].feed, default
+https://github.com/w5ohr/Dereth/releases/latest/download/appcast.xml; HTTPS or
+localhost only), a quiet daily check 120 frames after start-up (autoCheck, lastCheck)
+with a toast when something is found; `installUpdate` refuses App Translocation and an
+unwritable parent folder, downloads to support/updates, checks length and SHA-256,
+installs into the running bundle's own path with the previous version kept in
+support/updates/previous, writes updated.json, and relaunches (/bin/sh "sleep 1; exec
+<the app's executable>" with the same environment, then NSApp terminate); a sheet on
+the next start - "Updated to X" with the release notes and "Roll back to Y", or "Rolled
+back to Y"; the Settings "UPDATES" card (this version and path, feed field, Check once a
+day, Check now, last checked, a coloured status line, the offer with title, date, size
+and hash prefix, Markdown notes, Install and relaunch, Skip this version, Roll back to
+<previous>, and a note on what is checked); palette entry "Check for updates".
+`scripts/make-dmg.sh` now also writes build/dist/appcast.xml (title, pubDate, minimum
+macOS 13.0, the release notes from packaging/release-notes/<version>.md or
+OWUI_RELEASE_NOTES as CDATA, and the enclosure with build, version, length and sha256)
+with OWUI_DIST and OWUI_DOWNLOAD_BASE overrides. `--updatetest` runs 16 checks: the
+FIPS SHA-256 vector, version compare, a six-item feed (versions from elements and
+attributes, CDATA notes, refusals for no hash, plain http and a future macOS, localhost
+http allowed, newest pick, skipping), non-feeds rejected, and a real update - this
+app's bundle copied as "installed", a 9.9 copy re-signed and put in a real UDZO DMG;
+a wrong promised version and a different bundle id are refused with the installed copy
+untouched; the install puts 9.9 in place with the old version backed up and nothing
+left beside it; the installed 9.9 runs; rollback restores the old version and keeps
+9.9; rolling back again restores 9.9; no backup is reported. Verified on a scratch home
+with a copy of the app in a scratch folder (/Applications untouched) and a feed
+served from this Mac: make-dmg.sh built a 1.2 DMG and appcast from a re-signed 1.2 copy
+and Markdown notes; the 1.1 copy's Updates card showed "Version 1.2 is available"
+with the date, 4.5 MB, the hash prefix and the rendered notes; Install and relaunch
+downloaded it (seen in the feed server's log), the 1.1 process exited and a new one
+started, the bundle read 1.2 with 1.1 in support/updates/previous, and the relaunched
+app opened on "Updated to 1.2 - Updated from 1.1 to 1.2" with the notes and "Roll back
+to 1.1", still signed in; Roll back relaunched into 1.1 with 1.2 kept as the backup, a
+"Rolled back to 1.1" sheet, and a bundle whose signature verifies; then, with the
+feed's sha256 replaced by zeros, Check now offered 1.2 again (hash 000000...) and
+Install downloaded it and refused - "Not updated: the download's SHA-256 does not match
+the feed" - the app kept running on 1.1 and the download was deleted. Not covered:
+delta updates, an EdDSA signature on the feed (the hash is only as trustworthy as the
+feed's HTTPS host until Developer ID signing, #128), translocated or read-only installs
+beyond the refusal message, and publishing a real release (the default feed URL has
+no appcast yet, so a check there reports the HTTP error).

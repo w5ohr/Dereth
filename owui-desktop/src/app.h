@@ -849,6 +849,14 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- auto-update (updater_pane.mm) ----------------------------------------
+  void checkForUpdates(bool manual);
+  void installUpdate();
+  void rollbackUpdate();
+  void tickUpdater();
+  void drawUpdatedSheet();
+  void drawUpdatesSection(float width);
+
   // --- crash reporter (crash_reporter.cpp) ----------------------------------
   bool showCrashSheet = false;
   std::string crashFolder() const;

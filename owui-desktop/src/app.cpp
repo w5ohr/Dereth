@@ -1558,6 +1558,7 @@ void App::frame() {
   tickBackendPool();
   tickOnboarding();
   tickCrashReporter();
+  tickUpdater();
   handleShortcuts();
 
   // The native composer is a Cocoa view above everything ImGui draws, so it
@@ -1741,6 +1742,7 @@ void App::frame() {
     drawProjectFilesPopup();
   }
   drawCrashSheet();   // on every screen: a crash at start-up leaves you at sign-in
+  drawUpdatedSheet();
   widgets::renderToasts();
 
   // Periodic refresh of the chat list while idle.
