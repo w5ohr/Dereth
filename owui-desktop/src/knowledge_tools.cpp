@@ -1633,14 +1633,30 @@ void App::drawLocalIndexSection(float width) {
   }
 
   ImGui::Spacing();
-  auto runSearch = [] {
+  auto runSearch = [this] {
     const std::string query = gQuery;
     if (core::trim(query).empty() || gSearching) return;
     gSearching = true;
     gSearchError.clear();
-    async::run([query] {
+    const bool rerankOn = rerankPrefs().enabled;
+    async::run([this, query, rerankOn] {
       std::string error;
-      std::vector<Hit> hits = searchIndex(query, 6, &error);
+      std::vector<Hit> hits = searchIndex(query, rerankOn ? 10 : 6, &error);
+      if (rerankOn && !hits.empty()) {
+        std::vector<std::pair<std::string, std::string>> pairs;
+        for (const Hit& h : hits) pairs.emplace_back(h.path, h.text);
+        const auto kept = rerankLocalHits(query, pairs);
+        std::vector<Hit> reordered;
+        for (const auto& [path, text] : kept) {
+          for (const Hit& h : hits) {
+            if (h.path == path && h.text == text) {
+              reordered.push_back(h);
+              break;
+            }
+          }
+        }
+        if (!reordered.empty()) hits = reordered;
+      }
       async::post([hits, error] {
         gSearching = false;
         gHits = hits;
@@ -1663,6 +1679,8 @@ void App::drawLocalIndexSection(float width) {
     settings().extra["hybridSearch"] = hybridOn;
     settings().save();
   }
+  drawRerankControls();
+  if (!rerankSummary().empty() && rerankPrefs().enabled) widgets::dimText("Last rerank: %s", rerankSummary().c_str());
 
   if (gSearching) widgets::loadingRow("Searching…");
   if (!gSearchError.empty()) wrappedDim("Search failed: " + gSearchError);
@@ -1690,6 +1708,10 @@ void App::drawLocalIndexSection(float width) {
     ImGui::SameLine();
     if (hit.source.empty()) widgets::dimText("%.3f", hit.score);
     else widgets::dimText("%.3f - %s%s", hit.score, hit.source.c_str(), hit.exact ? " - exact match" : "");
+    if (const int rs = rerankScoreFor(hit.path, hit.text); rs >= 0) {
+      ImGui::SameLine();
+      widgets::dimText("- reranked %d/10", rs);
+    }
     std::string preview = core::trim(hit.text);
     if (preview.size() > 420) {
       size_t cut = 420;

@@ -1683,6 +1683,26 @@ in accessory mode straight away; Cmd+K opened the palette from the composer (aft
 key-equivalent monitor fix) and the palette command switched the mode off again. Not
 covered: "Open at login" - registering a login item is a persistence change on this Mac
 that the test harness refused, so the SMAppService path has only the status read
-exercised ("login item not found" for an unregistered dev build). One pre-existing
-limitation noticed: ImGui-handled chords (e.g. Cmd+Shift+R) do not fire while the native
-composer has keyboard focus, in any mode.
+exercised ("login item not found" for an unregistered dev build). A later check
+(next entry) showed app-handled chords such as Cmd+Shift+R do fire with the native
+composer focused in regular mode; what failed during this run was the accessory-mode
+window before the key-equivalent fix, so no general limitation stands.
+
+2026-10-25 105 (local reranker): `src/core/rerank.*` (Prefs <-> extra["localRerank"]:
+enabled, keep 1-12, minScore 0-10; `systemPrompt` / `userPrompt` listing passages by id
+with titles and a per-passage cut; `parse` reads a JSON array of {id, score} objects, a
+bare positional list only when it has one score per passage, or "id: score" lines, with
+think blocks ignored, unknown ids dropped and scores clamped; `order` by score above the
+floor up to keep; `summary`). `src/local_rerank.cpp`: `rerankLocalHits` (blocking, one
+completion on the auto-routing small model or the selected model; keeps the search order
+on any failure), `rerankScoreFor` / `rerankSummary` for the tab, `drawRerankControls`.
+Hooks: addLocalIndexHits fetches 10 hits instead of 4 and reranks them before they go in
+front of the prompt; the Local index tab search reranks its 10 hits and shows "reranked
+N/10" beside each plus a "Last rerank" line. `--reranktest` runs 8 offline checks.
+Verified on a scratch home with the three-file corpus already indexed: with the switch on,
+searching "when may visitors climb the tower" logged "3 scored: 10, 7, 0 by qwen3:8b in
+6412 ms; kept 2 of 3" and the tab listed the two kept hits with their scores (visitors.md
+10/10 first) and the summary line. Two parser defects fixed on the way: the line form
+swallowed newlines, and "[2]" in prose was read as a positional list. Not covered: the
+per-message prompt path beyond the shared function (the tab exercised the same call),
+Keep / Drop below sliders beyond rendering, and behaviour with no small model set.

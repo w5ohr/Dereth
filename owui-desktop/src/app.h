@@ -12,6 +12,7 @@
 #include <set>
 
 #include "core/readingmode.h"
+#include "core/rerank.h"
 #include "core/retrieval.h"
 #include <memory>
 #include <mutex>
@@ -824,6 +825,14 @@ class App {
   // --- menu-bar-only mode (menu_bar_only.cpp) -------------------------------
   void setMenuBarOnly(bool on);
   void drawMenuBarOnlySection(float width);
+
+  // --- local reranker (local_rerank.cpp) ------------------------------------
+  rerank::Prefs rerankPrefs() const;
+  std::string rerankModel() const;
+  std::vector<std::pair<std::string, std::string>> rerankLocalHits(const std::string& query, const std::vector<std::pair<std::string, std::string>>& hits);   // blocking
+  int rerankScoreFor(const std::string& path, const std::string& text) const;   // -1 when not scored
+  std::string rerankSummary() const;
+  void drawRerankControls();
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

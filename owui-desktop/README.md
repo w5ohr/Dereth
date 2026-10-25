@@ -662,6 +662,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   approval may be asked for in System Settings ▸ Login Items) so the extra
   is there before any window. The palette toggles the mode. `Open WebUI
   --menubartest` covers the preferences and the status words.
+- **Local reranker:** with "Re-rank hits with the small model" on (Tools ▸
+  Local index), the hits that would go along with a message - from the
+  local index's hybrid search - are first scored 0-10 by the auto-routing
+  small model for how well they answer the question; the top few (Keep)
+  above a floor (Drop below) are what reaches the prompt, in that order.
+  The Local index tab shows each hit's reranked score and a line with the
+  scores, model and time of the last pass; on any failure the search order
+  is kept. `Open WebUI --reranktest` covers the prompt, the parser and the
+  ordering.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -860,7 +860,10 @@ void App::handleSocketEvent(const std::string& name, const Json& payload) {
 // query), so it only ever runs on the worker that sends the request.
 static void addLocalIndexHits(App* app, Json* payload, const std::string& query) {
   if (query.empty()) return;
-  const auto hits = app->localSearch(query, 4);
+  const bool rerankOn = app->rerankPrefs().enabled;
+  auto hits = app->localSearch(query, rerankOn ? 10 : 4);
+  if (rerankOn) hits = app->rerankLocalHits(query, hits);   // the small model picks the ones that answer
+  else if (hits.size() > 4) hits.resize(4);
   if (hits.empty()) return;
   std::string block = "Relevant excerpts from the user's local files:\n\n";
   for (const auto& [path, text] : hits) block += "### " + path + "\n" + text + "\n\n";
