@@ -1228,3 +1228,24 @@ removed again after the test with `ollama rm`). Not covered: Cancel mid-pull, th
 not-enough-space branch (this disk has 524 GB free), split-file GGUFs (skipped by
 design), and the Ollama pages' HTML is a scrape that can break when the site changes.
 
+2026-10-25 III (79 token budgets): `src/core/budgets.{h,cpp}` (app-free: Limits
+{chatTokens, dayTokens, dayUsd, warnAt} <-> settings extra["budgets"]; spend() sums
+prompt+completion tokens and priced cost from the usage log for today (local date) and
+for one chat across all days; check() returns Ok / Warn (past warnAt of any cap) / Over
+with a message naming each cap crossed and the numbers, counting the send about to go
+out; summary() for tooltips). `src/budgets_pane.cpp`: interceptBudget runs in
+sendMessage after the redaction intercept - a Warn toasts once per hour per cap, an Over
+holds the text behind a "Budget reached" modal with Send anyway (sendingOverBudget_
+bypass) / Hold it (text back into the composer) / Open budgets; the chat header shows a
+"budget NN%" pill (worst cap, yellow past warnAt, red past 100%) with the summary as a
+tooltip; Tools > Usage gained a BUDGETS card (three cap fields, a warn-at slider, Save
+caps, and a gauge per cap set). The usage log is reloaded at most every 10 s. Palette
+"Budgets (token and cost caps)". `--budgettest` runs 8 offline checks. Verified on a
+scratch server with a 300-token day cap seeded in settings and a pretend price on qwen3:8b:
+the first send stopped at the sheet "today's tokens: 42.0k of 300 used" with the header
+pill red at 13990%; Send anyway sent it and the reply came; the Usage tab's card showed
+the caps and a red gauge "46.3k / 300 today, tokens"; a slider that printed 1% instead of
+80% was fixed and re-checked. Not covered: the Warn toast path (the log was already far
+past the cap), the per-chat cap and the dollar cap in the GUI (same code path, self-test
+only), Hold it and Open budgets.
+

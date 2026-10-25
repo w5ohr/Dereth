@@ -272,6 +272,8 @@ void App::drawUsageSection(float width) {
     ImGui::EndTable();
   }
 
+  drawBudgetsCard(width);
+
   // Prices and the energy figure.
   ImGui::Dummy(ImVec2(0, 6));
   widgets::sectionHeader("PRICES AND ENERGY");

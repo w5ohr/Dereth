@@ -346,6 +346,7 @@ void App::drawPalette() {
     maybeProposeMemories(last);
   });
   add("Health (CPU, GPU, memory, models in VRAM)", "command", [this] { pane = Pane::Tools; });
+  add("Budgets (token and cost caps)", "command", [this] { pane = Pane::Tools; });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {
     if (core::trim(settings().extra.value("vaultFolder", std::string())).empty()) {

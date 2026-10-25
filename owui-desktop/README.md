@@ -468,6 +468,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   headroom. The Ollama pages are scraped, so that side can break when the
   site changes; the Hugging Face side uses the Hub API. `Open WebUI
   --modellibtest` covers the parsers.
+- **Budgets:** Tools ▸ Usage ▸ Budgets sets caps on tokens per chat, tokens
+  per day and dollars per day (from the per-model prices entered there),
+  with a warning threshold. Near a cap a toast warns once; past it, each
+  send stops at a "Budget reached" sheet with Send anyway / Hold it / Open
+  budgets, and the text goes back into the composer. While a cap is set the
+  chat header shows a "budget NN%" pill whose tooltip has the numbers.
+  `Open WebUI --budgettest` covers the arithmetic.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

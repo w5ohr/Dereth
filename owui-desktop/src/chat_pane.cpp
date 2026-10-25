@@ -255,6 +255,8 @@ void App::drawChatPane() {
                           : fraction > 0.6f ? palette.warning
                                             : palette.accent;
       dl->AddRectFilled(ImVec2(origin.x, y), ImVec2(origin.x + width * fraction, y + 2.0f), color);
+      ImGui::SetCursorScreenPos(ImVec2(origin.x + width - 275.0f, y - 18.0f));
+      drawBudgetPill();   // only while a cap is set
       ImGui::SetCursorScreenPos(ImVec2(origin.x + width - 150.0f, y - 16.0f));
       ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textFaint));
       if (used < 1000) {

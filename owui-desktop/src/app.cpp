@@ -1003,6 +1003,7 @@ void App::sendMessage(const std::string& textIn) {
   const std::string text = plugins::Host::instance().beforeSend(textIn, pluginSnapshot());
   if (core::trim(text).empty() && attachments.empty()) return;
   if (!sendingRedacted_ && interceptRedaction(text)) return;
+  if (!sendingOverBudget_ && !sendingRedacted_ && interceptBudget(text)) return;
   if (!serverReachable && attachments.empty()) {
     offlineQueue.push_back(text);
     composer.clear();
@@ -1682,6 +1683,7 @@ void App::frame() {
     drawContextInspector();
     drawPromptForm();
     drawRedactionSheet();
+  drawBudgetSheet();
     drawRecipeInputs();
     tickRecipe();
     tickTriggers();

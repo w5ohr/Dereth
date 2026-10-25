@@ -16,6 +16,7 @@
 
 #include "agents/tool_loop.h"
 #include "core/backends.h"
+#include "core/budgets.h"
 #include "api/client.h"
 #include "core/pty.h"
 #include "core/promptvars.h"
@@ -674,6 +675,18 @@ class App {
   std::string redactionPolicy(int kind) const;          // "ask" | "always" | "never"
   void setRedactionPolicy(int kind, const std::string& policy);
   bool sendingRedacted_ = false;
+
+  // --- token budgets (budgets_pane.cpp) -------------------------------------
+  struct BudgetSheet {
+    bool open = false, justOpened = false;
+    std::string text, message;
+  } budgetSheet;
+  bool sendingOverBudget_ = false;
+  bool interceptBudget(const std::string& text);   // true when the send is held behind the modal
+  void drawBudgetSheet();
+  void drawBudgetPill();
+  void drawBudgetsCard(float width);
+  budgets::Spend budgetSpend(bool force);
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
