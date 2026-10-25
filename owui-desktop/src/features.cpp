@@ -381,6 +381,7 @@ void App::drawPalette() {
   add("Text-to-speech (engine, Mac voice, rate)", "settings", [this] { pane = Pane::Settings; });
   add("Playground (try a regex, SQL or jq locally)", "command", [this] { openPlayground("", ""); });
   add("Model evaluation (prompt sets across models, judge, trends)", "command", [this] { pane = Pane::Tools; });
+  add("Save the last reply to the library", "command", [this] { saveLastReplyToLibrary(); });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;
     for (const std::string& id : chat.branch()) {
@@ -487,7 +488,7 @@ void App::drawPalette() {
   const std::pair<const char*, Pane> panes[] = {
       {"Go to Chats", Pane::Chat}, {"Go to Notes", Pane::Notes}, {"Go to Channels", Pane::Channels},
       {"Go to Workspace", Pane::Workspace}, {"Go to Images", Pane::Images}, {"Go to Files", Pane::Files},
-      {"Go to Memories", Pane::Memories}, {"Go to Admin", Pane::Admin}, {"Go to API Console", Pane::Console},
+      {"Go to Memories", Pane::Memories}, {"Go to Library", Pane::Library}, {"Go to Admin", Pane::Admin}, {"Go to API Console", Pane::Console},
       {"Go to Tools", Pane::Tools}, {"Go to Settings", Pane::Settings}};
   for (const auto& [label, target] : panes) {
     Pane p = target;

@@ -44,6 +44,7 @@ enum class Pane {
   Images,
   Files,
   Memories,
+  Library,
   Admin,
   Console,
   Settings,
@@ -770,6 +771,13 @@ class App {
   // --- model evaluation (eval_pane.cpp) ------------------------------------
   void runEval();
   void drawEvalSection(float width);
+
+  // --- saved answers library (library_pane.cpp) ----------------------------
+  bool isInLibrary(const std::string& messageId) const;
+  void saveToLibrary(const std::string& messageId);   // toggles
+  void saveLastReplyToLibrary();
+  void drawLibraryButton(const std::string& messageId);
+  void drawLibraryPane();
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

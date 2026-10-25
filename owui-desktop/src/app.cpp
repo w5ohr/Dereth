@@ -41,6 +41,7 @@ const NavItem kNav[] = {
     {Pane::Images, icons::Icon::Image, "Images", false},
     {Pane::Files, icons::Icon::Folder, "Files", false},
     {Pane::Memories, icons::Icon::Brain, "Memories", false},
+    {Pane::Library, icons::Icon::Archive, "Library", false},
     {Pane::Admin, icons::Icon::Wrench, "Admin", true},
     {Pane::Console, icons::Icon::Code, "API Console", false},
     {Pane::Tools, icons::Icon::Wrench, "Tools", false},
@@ -1661,6 +1662,7 @@ void App::frame() {
       case Pane::Images: drawImagesPane(); break;
       case Pane::Files: drawFilesPane(); break;
       case Pane::Memories: drawMemoriesPane(); break;
+      case Pane::Library: drawLibraryPane(); break;
       case Pane::Admin: drawAdminPane(); break;
       case Pane::Console: drawConsolePane(); break;
       case Pane::Settings: drawSettingsPane(); break;

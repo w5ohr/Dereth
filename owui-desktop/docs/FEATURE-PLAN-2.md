@@ -1496,3 +1496,21 @@ progressed "Running 0 / 2", finished with a toast, the matrix showed 10/10 at 28
 "mean 10.0 - last 10.0 - 1 run" with its bar. Not covered: thumbs overrides and the cell
 detail beyond rendering, add/delete set and prompt forms, Export CSV..., Stop, and runs
 across several models. Note: the Tools tab bar now overflows at 1380 px and scrolls.
+
+2026-10-25 148 (saved answers library): `src/core/library.*` (Entry <-> JSON; `add`
+refreshes an already-saved message in place keeping its note and merging tags; `remove`,
+`find`; `parseTags` with comma/space/#, lower-case, unique; `search` - every word in
+text, note, title or model, "#tag" words against tags only (prefix ok), newest first;
+`tagCounts`; `snippet` on UTF-8 boundaries; `markdown` export with a heading per entry,
+meta line, note as a quote). `src/library_pane.cpp`: Pane::Library in the rail (archive
+icon) with search, tag chips, entry cards (snippet, note, tags, Open chat which focuses
+the message, Copy, Add/Edit note or tags inline, Remove), Export Markdown... and Copy
+Markdown in the header; the archive button under each reply toggles saving (accent
+when saved); palette "Save the last reply to the library" and "Go to Library".
+`--librarytest` runs 9 offline checks. Verified on a scratch server: the archive button
+under the seeded reply toasted "Saved to the library (1 answer)" and turned accent with
+a "Remove from the library" tooltip, library.json held the entry, the Library pane
+listed it with its snippet and buttons, the note/tags editor opened, and Copy Markdown
+put the export on the clipboard, and Open chat returned to the chat with the saved reply's
+archive button lit. Not covered: typing a note or tags, tag chips and the #tag search
+(self-test only), Export Markdown... (save panel).

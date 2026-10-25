@@ -689,6 +689,7 @@ void App::drawChatPane() {
         }
         if (!isUser) drawCitedCopyButton(message);   // footnotes / BibTeX when the reply has sources
         if (!isUser) drawRetrievalButton(message);   // chunks, relevance, pin / exclude, re-ask
+        if (!isUser) drawLibraryButton(messageId);   // save to the cross-chat library
         ImGui::SameLine();
         if (icons::button("quote", icons::Icon::Chat, "Quote in a reply")) quoteReply(message);
         ImGui::SameLine();

@@ -577,6 +577,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   copy. A starter set of five prompts comes built in. `Open WebUI --evaltest`
   covers the set and score formats, the judge prompt and its parser, the
   matrix, trends and CSV.
+- **Saved answers library:** the archive button under a reply saves it to a
+  global shelf on this Mac (support/library.json) - pins stay per chat, this
+  is across every chat. The Library pane in the rail searches text, notes,
+  chat titles and models (a `#tag` word narrows to a tag), shows tag chips
+  with counts, lets you add a note and tags to each entry, reopen the chat
+  at that message, copy, or remove, and exports the shown entries as
+  Markdown (file or clipboard). The palette has "Save the last reply to the
+  library" and "Go to Library". `Open WebUI --librarytest` covers the store,
+  search, tags and the export.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.
