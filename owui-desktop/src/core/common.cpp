@@ -1,3 +1,4 @@
+#include "core/i18n.h"
 #include "core/common.h"
 #include "core/crashreport.h"
 
@@ -115,33 +116,13 @@ std::string formatTime(int64_t unixSeconds, const char* fmt) {
 
 std::string relativeTime(int64_t unixSeconds) {
   if (unixSeconds <= 0) return "";
-  int64_t delta = nowSeconds() - unixSeconds;
-  if (delta < 0) delta = 0;
-  if (delta < 60) return "just now";
-  if (delta < 3600) {
-    int m = static_cast<int>(delta / 60);
-    return std::to_string(m) + (m == 1 ? " minute ago" : " minutes ago");
-  }
-  if (delta < 86400) {
-    int h = static_cast<int>(delta / 3600);
-    return std::to_string(h) + (h == 1 ? " hour ago" : " hours ago");
-  }
-  if (delta < 172800) return "yesterday";
-  if (delta < 86400 * 7) return std::to_string(delta / 86400) + " days ago";
-  return formatTime(unixSeconds, "%b %e");
+  return i18n::relative(unixSeconds, nowSeconds());   // "2 minutes ago", "vor 2 Minuten", ...
+
 }
 
 std::string humanBytes(int64_t bytes) {
-  const char* units[] = {"B", "KB", "MB", "GB", "TB"};
-  double v = static_cast<double>(bytes);
-  int u = 0;
-  while (v >= 1024.0 && u < 4) {
-    v /= 1024.0;
-    ++u;
-  }
-  char buf[64];
-  snprintf(buf, sizeof(buf), (u == 0 ? "%.0f %s" : "%.1f %s"), v, units[u]);
-  return buf;
+  return i18n::bytes(bytes);   // the decimal separator follows the locale
+
 }
 
 std::string supportDir() {

@@ -1,3 +1,4 @@
+#include "core/i18n.h"
 #include "ui/markdown.h"
 
 #include <set>
@@ -290,9 +291,41 @@ void drawRun(ImDrawList* dl, Layout* layout, const Run& run, const Options& opti
 }
 
 // Renders one paragraph's worth of runs and advances the ImGui cursor.
+float measureText(const std::string& s) { return ImGui::CalcTextSize(s.c_str()).x; }
+
+// A paragraph whose first strong character is Hebrew, Arabic, ... : wrapped in
+// logical order, each line reordered for display and right-aligned. Inline
+// styling is dropped for such paragraphs (the reordering works on plain text).
+void renderRtl(const std::string& text, float width, ImU32 color) {
+  const float lineHeight = ImGui::GetTextLineHeight() * 1.28f;
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  const auto lines = i18n::wrapWords(text, width, measureText);
+  float y = 0.0f;
+  for (const std::string& line : lines) {
+    const std::string shown = i18n::visual(line);
+    const float w = ImGui::CalcTextSize(shown.c_str()).x;
+    dl->AddText(ImVec2(origin.x + std::max(0.0f, width - w), origin.y + y), color, shown.c_str());
+    y += lineHeight;
+  }
+  ImGui::Dummy(ImVec2(width, std::max(lineHeight, y)));
+}
+
 void renderRuns(const std::vector<Run>& runs, const Options& options, ImU32 color) {
   const float width = options.wrapWidth > 0.0f ? options.wrapWidth
                                                : ImGui::GetContentRegionAvail().x;
+  {
+    std::string all;
+    bool images = false;
+    for (const Run& run : runs) {
+      all += run.text;
+      images = images || run.image;
+    }
+    if (!images && i18n::isRtl(all)) {
+      renderRtl(all, width, color);
+      return;
+    }
+  }
   Layout layout;
   layout.startX = ImGui::GetCursorScreenPos().x;
   layout.cursor = ImGui::GetCursorScreenPos();

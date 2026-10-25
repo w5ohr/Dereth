@@ -1,3 +1,4 @@
+#include "core/i18n.h"
 #include "native.h"
 
 #import <Carbon/Carbon.h>
@@ -659,6 +660,8 @@ NSColor* colorFromImU32(unsigned c) {
 
 - (void)drawRect:(NSRect)rect {
   [super drawRect:rect];
+  // The placeholder follows the app's language (looked up each time it is drawn).
+  if (self.placeholder.length > 0) self.placeholder = [NSString stringWithUTF8String:i18n::tr("Send a message...")];
   if (self.string.length == 0 && self.placeholder.length > 0 && !self.hasMarkedText) {
     NSDictionary* attributes = @{
       NSFontAttributeName : self.font ?: [NSFont systemFontOfSize:13],

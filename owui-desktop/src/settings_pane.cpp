@@ -38,6 +38,9 @@ void App::drawSettingsPane() {
   paneBody("##settings");
   const float width = ImGui::GetContentRegionAvail().x - 18.0f;
 
+  widgets::sectionHeader("LANGUAGE AND REGION");
+  card("language", [&] { drawLanguageSection(width); }, width);
+
   widgets::sectionHeader("APPEARANCE");
   card("appearance", [&] {
     const char* themes[] = {"dark", "light", "system", "midnight"};

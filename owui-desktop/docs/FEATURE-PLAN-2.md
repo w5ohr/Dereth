@@ -2326,3 +2326,54 @@ on the window's draw list over the selectable. Not covered: dropping a file (no 
 source in the harness; the routing is code-reviewed), very long recordings (pieces
 go one at a time, so an hour takes as long as the server needs for each), private
 chats / offline transcription (no local whisper), and speaker labels.
+
+2026-10-25 144 (localisation) - partial by design: the strings table covers the app's frame
+(103 strings), not every label. `src/core/i18n.h`, `i18n_tables.cpp` (rows of English key +
+de / es / fr / ja: rail labels, pane titles and subtitles, sidebar, empty chat and its four
+suggestions, composer, sign-in, Save, "just now", every Settings / Tools section header, the
+language card's own labels), `i18n.mm`: `setLanguage` ("" = the first of NSLocale
+preferredLanguages we have, else en), `tr(const char*)` - English returns the pointer it
+got; "Label##id" translates the label and keeps the ImGui id; translations cached by
+language + key so pointers stay valid; misses fall back to English; "qps" returns
+pseudo("[Šéttîñgš]", keeping %s / %d and ids) for every looked-up string; `localeId` (the
+system locale for System, else language + this Mac's region - the macOS convention - or the
+language's home region de_DE / es_ES / fr_FR / ja_JP with `setFormatsFromLanguage`);
+`relative` (NSRelativeDateTimeFormatter, full units, named style: "yesterday", "vor 2
+Minuten", "2 分前"; whole units like the old helper; older than 30 days -> a medium date;
+under a minute -> tr("just now")), `dateTime`, `number` (NSNumberFormatter), `bytes`;
+`isRtl` (first strong character: Hebrew, Arabic, Syriac, Thaana, NKo, ... and the RTL
+presentation forms and supplementary ranges; digits and punctuation are weak); `visual` -
+a CTLine with a right-to-left base writing direction, its glyph runs taken in visual
+order, RTL runs reversed by composed character sequence (marks stay on their letter) with
+brackets and guillemets mirrored, LTR runs (English words, numbers) kept; `wrapWords`.
+Wiring: widgets::sectionHeader, widgets::primaryButton and paneHeader translate what they
+are given; the rail tooltip, sidebar (date groups, search hint, By meaning, + New folder,
+No conversations yet, Show archived / active), sign-in, the empty chat's greeting, prompt
+and suggestions (a clicked suggestion goes out in the reader's language), the drawn and
+the native (NSTextView) composer placeholders and the New chat button go through tr;
+core::relativeTime and core::humanBytes now use the locale formatters (31 files call them);
+the markdown renderer sends a paragraph, heading or list item whose text starts RTL to
+`renderRtl` - wrapped in logical order, each line reordered and right-aligned (inline
+styling dropped for such paragraphs). Settings "LANGUAGE AND REGION" card first: the
+language combo, "Formats from the language instead of this Mac's region", a preview (date,
+two relative times, a number, a size, the locale id), a note on coverage and a Hebrew
+sample; `language` and `formatsFromLanguage` in extra, applied at start-up. `--i18ntest`
+runs 14 checks: the table complete in all four languages with no duplicate keys and the
+same placeholders, English returning its own pointer, German (plain, ##id, %s, a miss),
+cache stability, Japanese, the pseudo-locale, the system language, numbers (1,234.5 /
+1.234,5 / 1 234,5), relative times (2 minutes ago, vor 2 Minuten, hace 2 horas, yesterday,
+分前), dates (25. Oktober 2026, octobre 2026, 2026年10月25日), isRtl, visual ("שלום world"
+-> "world םולש", mirrored brackets, "1.2" kept), the locale switch (de_US by region, de_DE
+by language) and wrapWords. Verified on a scratch home: in German the sidebar, rail
+tooltips, greeting "Hallo, Admin", the four suggestions, "Nachricht senden..." in the
+native composer and "vor 4 Minuten" on messages; a seeded Hebrew reply rendered
+right-aligned and in correct reading order ("שלום! ... Open WebUI, ומספר: 1.2.") while its
+English paragraph stayed left; the Settings card showed de_US formats (1,234,567.89,
+10/25/26) - which led to the formats switch - and in Japanese with it ticked "2026/10/25
+18:14", "2 分前 / 一昨日" and ja_JP, with the whole frame in Japanese (CJK from the Arial
+Unicode fallback); the pseudo-locale bracketed every covered string and left the rest
+(Theme, Reduced motion, ...) plain. Not covered: translating the rest of the UI (each
+string needs a tr() at its call site; the pseudo-locale shows where), mirroring the
+layout for RTL UI languages (no RTL UI language is offered), Arabic letter joining (ImGui
+draws Arabic letters in their isolated forms; Hebrew needs no shaping), inline styling
+inside RTL paragraphs, and the palette's command names.

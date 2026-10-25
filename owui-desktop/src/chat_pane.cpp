@@ -1,6 +1,7 @@
 // The conversation view: header, message list, composer.
 #include <algorithm>
 
+#include "core/i18n.h"
 #include "app.h"
 #include "core/virtualize.h"
 #include "core/async.h"
@@ -122,7 +123,7 @@ void App::drawChatPane() {
       widgets::spinner("##busy", 8.0f, 2.0f);
       ImGui::SameLine();
     }
-    if (icons::button("newchat", icons::Icon::Plus, "New chat")) newChat();
+    if (icons::button("newchat", icons::Icon::Plus, i18n::tr("New chat"))) newChat();
     ImGui::SameLine();
     if (icons::button("findinchat", icons::Icon::Search, "Find in chat (Cmd+F)", 0.0f,
                       showChatSearch ? palette.accent : 0)) {
@@ -347,11 +348,11 @@ void App::drawChatPane() {
       theme::pushScaled(1.9f);
       theme::pushBold();
       const std::string name = user_.value("name", "there");
-      ImGui::Text("Hello, %s", name.c_str());
+      ImGui::Text(i18n::tr("Hello, %s"), name.c_str());
       theme::pop();
       ImGui::PopFont();
       ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textDim));
-      ImGui::TextUnformatted("How can I help you today?");
+      ImGui::TextUnformatted(i18n::tr("How can I help you today?"));
       ImGui::PopStyleColor();
       ImGui::Dummy(ImVec2(0, 18));
 
@@ -365,14 +366,15 @@ void App::drawChatPane() {
         ImGui::PushID(starter);
         ImVec2 pos = ImGui::GetCursorScreenPos();
         const float rowHeight = ImGui::GetTextLineHeight() + 18.0f;
+        const char* shown = i18n::tr(starter);   // the prompt goes out in the reader's language
         if (ImGui::InvisibleButton("##starter", ImVec2(contentWidth, rowHeight))) {
-          composer = starter;
+          composer = shown;
         }
         const bool hovered = ImGui::IsItemHovered();
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(pos, ImVec2(pos.x + contentWidth, pos.y + rowHeight),
                           hovered ? palette.panelAlt : palette.panel, 10.0f);
-        dl->AddText(ImVec2(pos.x + 14, pos.y + 9), palette.textDim, starter);
+        dl->AddText(ImVec2(pos.x + 14, pos.y + 9), palette.textDim, shown);
         ImGui::PopID();
         ImGui::Dummy(ImVec2(0, 6));
       }
@@ -1063,7 +1065,7 @@ void App::drawChatPane() {
       ImGui::PopStyleColor();
       if (composer.empty() && !composerFocused) {
         ImGui::GetWindowDrawList()->AddText(ImVec2(boxStart.x + 17, boxStart.y + 14),
-                                            palette.textFaint, "Send a message...");
+                                            palette.textFaint, i18n::tr("Send a message..."));
       }
     }
 

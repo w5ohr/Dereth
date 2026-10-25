@@ -849,6 +849,9 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- localisation (language_pane.cpp) -------------------------------------
+  void drawLanguageSection(float width);
+
   // --- audio transcription (transcribe_pane.mm) -----------------------------
   void openAudioForTranscript(const std::string& path, bool force);
   void openTranscribeTab();

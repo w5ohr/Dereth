@@ -873,6 +873,19 @@ Things a browser tab can't do, plus the workflow features built on top:
   Transcribe again redoes it. `Open WebUI --transcribetest` covers the
   splitting, the WAV cutting, the exports, and decoding real files made
   with `say`.
+- **Language and region:** Settings ▸ Language and region picks System,
+  English, Deutsch, Español, Français or 日本語 - or a pseudo-locale that
+  brackets and accents every translated string so what is still English
+  stands out. The translation covers the app's frame: the rail, pane
+  headers, sidebar, sign-in, composer, the empty chat with its suggestions,
+  and every section header (103 strings); deeper text is English for now.
+  Dates, relative times ("vor 2 Minuten", "2 分前"), numbers and file sizes
+  follow the locale everywhere, using this Mac's region by default or the
+  language's own formats when that box is ticked. Paragraphs that start in
+  Hebrew, Arabic or another right-to-left script are right-aligned and put
+  in reading order, with English words and numbers inside them kept
+  left-to-right. `Open WebUI --i18ntest` covers the table, lookup, the
+  formats and the reordering.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -1,3 +1,4 @@
+#include "core/i18n.h"
 #include "app.h"
 
 #include "plugins/plugin_host.h"
@@ -276,6 +277,8 @@ App& App::instance() {
 
 void App::init() {
   core::Settings& cfg = settings();
+  i18n::setLanguage(cfg.extra.value("language", std::string()));
+  i18n::setFormatsFromLanguage(cfg.extra.value("formatsFromLanguage", false));
   // OWUI_SERVER / OWUI_TOKEN let you point the app at another instance without
   // touching the saved settings — handy for testing against a scratch server.
   // The override is applied to the client only and never written into
@@ -1686,7 +1689,7 @@ void App::frame() {
         }
         icons::draw(dl, item.icon, ImVec2(pos.x + size * 0.5f, pos.y + size * 0.5f), 19.0f,
                     active ? theme::palette().accent : theme::palette().textDim);
-        if (hovered) ImGui::SetTooltip("%s", item.label);
+        if (hovered) ImGui::SetTooltip("%s", i18n::tr(item.label));
         ImGui::PopID();
         ImGui::Dummy(ImVec2(0, 4));
       }
@@ -1803,28 +1806,28 @@ void App::drawLogin() {
   ImGui::PopFont();
   ImGui::Dummy(ImVec2(0, 2));
   ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(theme::palette().textDim));
-  widgets::centeredText("Native desktop client");
+  widgets::centeredText(i18n::tr("Native desktop client"));
   ImGui::PopStyleColor();
   ImGui::Dummy(ImVec2(0, 20));
 
-  ImGui::TextUnformatted("Server");
+  ImGui::TextUnformatted(i18n::tr("Server"));
   ImGui::SetNextItemWidth(-FLT_MIN);
   if (ImGui::InputText("##server", &serverInput_)) authError_.clear();
 
   ImGui::Dummy(ImVec2(0, 6));
-  ImGui::TextUnformatted("Email");
+  ImGui::TextUnformatted(i18n::tr("Email"));
   ImGui::SetNextItemWidth(-FLT_MIN);
   ImGui::InputText("##email", &loginEmail_);
 
   ImGui::Dummy(ImVec2(0, 6));
-  ImGui::TextUnformatted("Password");
+  ImGui::TextUnformatted(i18n::tr("Password"));
   ImGui::SetNextItemWidth(-FLT_MIN);
   const bool submitted =
       ImGui::InputText("##password", &loginPassword_,
                        ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
 
   ImGui::Dummy(ImVec2(0, 8));
-  ImGui::Checkbox("Stay signed in", &settings().rememberSession);
+  ImGui::Checkbox(i18n::tr("Stay signed in"), &settings().rememberSession);
 
   ImGui::Dummy(ImVec2(0, 12));
   widgets::beginDisabled(connecting_);

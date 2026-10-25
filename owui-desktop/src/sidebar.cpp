@@ -1,6 +1,7 @@
 // Left sidebar: new chat, search, folders, pinned and recent conversations.
 #include <algorithm>
 
+#include "core/i18n.h"
 #include "app.h"
 #include "core/async.h"
 #include "core/common.h"
@@ -23,11 +24,11 @@ bool gShowArchived = false;
 
 const char* bucketFor(int64_t updatedAt) {
   const int64_t age = core::nowSeconds() - updatedAt;
-  if (age < 86400) return "Today";
-  if (age < 172800) return "Yesterday";
-  if (age < 604800) return "Previous 7 days";
-  if (age < 2592000) return "Previous 30 days";
-  return "Older";
+  if (age < 86400) return i18n::tr("Today");
+  if (age < 172800) return i18n::tr("Yesterday");
+  if (age < 604800) return i18n::tr("Previous 7 days");
+  if (age < 2592000) return i18n::tr("Previous 30 days");
+  return i18n::tr("Older");
 }
 
 }  // namespace
@@ -55,7 +56,7 @@ void App::drawSidebar(float width) {
   }
   ImGui::Dummy(ImVec2(0, 8));
 
-  if (widgets::searchField("chatsearch", &chatSearch, chatSearchSemantic ? "Search chats by meaning" : "Search chats", inner)) {
+  if (widgets::searchField("chatsearch", &chatSearch, i18n::tr(chatSearchSemantic ? "Search chats by meaning" : "Search chats"), inner)) {
     if (chatSearchSemantic) {
       semanticSearchDirty = true;
       semanticSearchAt = core::nowMillis();
@@ -101,7 +102,7 @@ void App::drawSidebar(float width) {
 
   {
     bool semantic = chatSearchSemantic;
-    if (ImGui::Checkbox("By meaning", &semantic)) {
+    if (ImGui::Checkbox(i18n::tr("By meaning"), &semantic)) {
       chatSearchSemantic = semantic;
       if (semantic) {
         semanticSearchDirty = true;
@@ -166,7 +167,7 @@ void App::drawSidebar(float width) {
     ImGui::Dummy(ImVec2(0, 6));
   }
 
-  if (ImGui::SmallButton("+ New folder")) ImGui::OpenPopup("##newfolder");
+  if (ImGui::SmallButton(i18n::tr("+ New folder"))) ImGui::OpenPopup("##newfolder");
   if (ImGui::BeginPopup("##newfolder")) {
     ImGui::SetNextItemWidth(180);
     if (ImGui::InputTextWithHint("##foldername", "Folder name", &gNewFolderName,
@@ -330,7 +331,7 @@ void App::drawSidebar(float width) {
 
   if (chats.empty() && !chatsLoading) {
     ImGui::Dummy(ImVec2(0, 20));
-    widgets::dimText("No conversations yet");
+    widgets::dimText("%s", i18n::tr("No conversations yet"));
   }
   if (chatsLoading) {
     ImGui::Dummy(ImVec2(0, 10));
@@ -338,7 +339,7 @@ void App::drawSidebar(float width) {
   }
 
   ImGui::Dummy(ImVec2(0, 14));
-  if (ImGui::SmallButton(gShowArchived ? "Show active" : "Show archived")) {
+  if (ImGui::SmallButton(i18n::tr(gShowArchived ? "Show active" : "Show archived"))) {
     gShowArchived = !gShowArchived;
     if (gShowArchived) {
       async::run([this] {

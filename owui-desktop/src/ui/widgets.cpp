@@ -1,3 +1,4 @@
+#include "core/i18n.h"
 #include "ui/widgets.h"
 
 #include <cmath>
@@ -151,7 +152,7 @@ void sectionHeader(const char* text) {
   ImGui::Spacing();
   theme::pushBold();
   ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(theme::palette().textFaint));
-  ImGui::TextUnformatted(text);
+  ImGui::TextUnformatted(i18n::tr(text));
   ImGui::PopStyleColor();
   theme::pop();
   ImGui::Spacing();
@@ -189,6 +190,7 @@ bool linkText(const char* text) {
 }
 
 bool primaryButton(const char* label, ImVec2 size) {
+  label = i18n::tr(label);
   const auto& p = theme::palette();
   ImGui::PushStyleColor(ImGuiCol_Button, theme::toVec4(p.accent));
   ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme::toVec4(p.accentHover));

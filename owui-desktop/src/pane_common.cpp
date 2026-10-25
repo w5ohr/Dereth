@@ -1,3 +1,4 @@
+#include "core/i18n.h"
 #include "pane_common.h"
 
 #include "ui/theme.h"
@@ -7,6 +8,8 @@ namespace app {
 
 void paneHeader(const char* title, const char* subtitle,
                 const std::function<void()>& actions) {
+  title = i18n::tr(title);
+  if (subtitle) subtitle = i18n::tr(subtitle);
   ImGui::BeginChild("##paneheader", ImVec2(0, subtitle ? 62.0f : 54.0f));
   ImDrawList* dl = ImGui::GetWindowDrawList();
   const ImVec2 origin = ImGui::GetWindowPos();
