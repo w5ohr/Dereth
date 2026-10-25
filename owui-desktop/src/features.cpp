@@ -6,6 +6,8 @@
 #include <ctime>
 
 #include "app.h"
+
+#include "plugins/plugin_host.h"
 #include "core/async.h"
 #include "core/common.h"
 #include "core/store.h"
@@ -330,6 +332,12 @@ void App::drawPalette() {
     settings().extra["agentMode"] = agentMode;
     settings().save();
   });
+  for (const plugins::Command& command : plugins::Host::instance().commands()) {
+    const std::string pluginId = command.pluginId;
+    const std::string name = command.name;
+    add(command.name, "plugin: " + command.pluginName + (command.description.empty() ? "" : " - " + command.description),
+        [this, pluginId, name] { plugins::Host::instance().runCommand(pluginId, name, pluginSnapshot()); });
+  }
   add("Capture whole screen to chat", "command", [this] { captureScreenToChat(false); });
   add("Export chat as Markdown", "command", [this] { exportChat("md"); });
   add("Export chat as HTML", "command", [this] { exportChat("html"); });

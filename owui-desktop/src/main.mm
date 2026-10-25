@@ -433,6 +433,7 @@ int runMcpSelfTest(int argc, const char* argv[]);
 int runSchemaSelfTest();
 int runPromptVarsSelfTest();
 int runAgentSelfTest();
+int runPluginSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -441,6 +442,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--schematest") return runSchemaSelfTest();
     if (std::string(argv[i]) == "--varstest") return runPromptVarsSelfTest();
     if (std::string(argv[i]) == "--agenttest") return runAgentSelfTest();
+    if (std::string(argv[i]) == "--plugintest") return runPluginSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

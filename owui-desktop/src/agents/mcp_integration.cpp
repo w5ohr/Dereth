@@ -6,6 +6,8 @@
 // extra["mcpEnabled"], extra["mcpAutoApprove"], extra["mcpMaxRounds"].
 #include "app.h"
 
+#include "plugins/plugin_host.h"
+
 #include <algorithm>
 #include <chrono>
 
@@ -220,6 +222,17 @@ std::vector<agents::ToolSpec> App::mcpToolSpecs() const {
       spec.tool = tool.name;
       out.push_back(spec);
     }
+  }
+  // Plugin tools sit beside the MCP ones; their "server" is the plugin.
+  for (const plugins::Tool& tool : plugins::Host::instance().tools()) {
+    agents::ToolSpec spec;
+    spec.name = mcp::qualifiedToolName(tool.pluginName, tool.name);
+    spec.description = tool.description;
+    spec.parameters = tool.parameters;
+    spec.serverId = "plugin:" + tool.pluginId;
+    spec.serverName = tool.pluginName;
+    spec.tool = tool.name;
+    out.push_back(spec);
   }
   return out;
 }
@@ -446,11 +459,24 @@ agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
       stream->approvalCv.wait_for(lock, std::chrono::milliseconds(200));
     }
   };
-  hooks.invoke = [clients, byName](const agents::Call& call) {
+  const Json pluginContext = pluginSnapshot();
+  hooks.invoke = [clients, byName, pluginContext](const agents::Call& call) {
     agents::ToolOutcome out;
     auto spec = byName.find(call.name);
     if (spec == byName.end()) {
       out.error = "unknown tool '" + call.name + "'";
+      return out;
+    }
+    if (core::startsWith(spec->second.serverId, "plugin:")) {
+      const double started = core::nowMillis();
+      std::string error;
+      out.text = plugins::Host::instance().callTool(spec->second.serverId.substr(7), spec->second.tool, call.args,
+                                                    pluginContext, &error);
+      out.durationMs = core::nowMillis() - started;
+      if (!error.empty()) {
+        out.isError = true;
+        out.text = error;
+      }
       return out;
     }
     auto client = clients.find(spec->second.serverId);

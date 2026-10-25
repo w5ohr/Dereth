@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "plugins/plugin_host.h"
+
 #include <algorithm>
 #include <cstdlib>
 #include <set>
@@ -312,12 +314,14 @@ void App::init() {
     });
   });
   mcpInit();
+  pluginsInit();
 }
 
 void App::shutdown() {
   stopAllStreams();
   if (terminal) terminal->stop();
   stopFolderSync();
+  pluginsShutdown();
   mcpShutdown();
   socket_.stop();
   if (!secondaryInstance) {
@@ -907,9 +911,11 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   });
 }
 
-void App::sendMessage(const std::string& text) {
+void App::sendMessage(const std::string& textIn) {
+  if (!sendingExpanded_ && interceptPromptVariables(textIn)) return;
+  // Plugins' before-send hooks see the final text (variables already filled).
+  const std::string text = plugins::Host::instance().beforeSend(textIn, pluginSnapshot());
   if (core::trim(text).empty() && attachments.empty()) return;
-  if (!sendingExpanded_ && interceptPromptVariables(text)) return;
   if (!serverReachable && attachments.empty()) {
     offlineQueue.push_back(text);
     composer.clear();
@@ -1543,6 +1549,7 @@ void App::frame() {
     drawQuickAsk();
     drawContextInspector();
     drawPromptForm();
+    pluginsTick();
     drawCitationPopup();
     drawProjectFilesPopup();
   }

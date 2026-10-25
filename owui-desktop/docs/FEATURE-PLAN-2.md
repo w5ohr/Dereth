@@ -558,3 +558,40 @@ prefixes ids per call (`s2_call_1`). Not exercised: Pause (the button is wired t
 flag the loop polls between steps) and a run without any MCP tools (text-only prefix).
 Known: the "Step n/m" status shows both in the card header and the message's status
 row while running.
+
+2026-10-24 X (141 plugin API): `src/plugins/plugin_host.{h,mm}` - one JSContext per
+`*.js` file in the plugins folder, all on one serial dispatch queue; the `owui` object
+offers plugin({name, version, description}), registerCommand, registerTool ({name,
+description, parameters}), onBeforeSend, registerRenderer, toast / notify / insert /
+send / openArtifact, clipboard.read/write, fetch (synchronous, via net::perform),
+readFile / writeFile (~ expands), storage.get/set (plugins/.data/<id>.json), log and
+console.*. Exceptions go to the plugin's error list and log (and back to the model as
+the tool's error); promises that settle without timers are awaited; hooks (3 s), tools
+(60 s) and renderers (5 s) run through a semaphore with a timeout so a stuck plugin
+cannot hang the app; files starting with `_` or `.` are skipped. `src/plugins/
+plugin_integration.cpp` wires it in: callbacks posted to the UI thread, FSEvents hot
+reload keyed off the names/mtimes of the .js files (the first version reloaded on the
+plugins' own storage writes under .data/ and looped: six "1 plugin loaded" toasts),
+palette entries ("plugin: <name>"), plugin tools merged into `mcpToolSpecs()` with
+serverId "plugin:<id>" and routed in `makeToolHooks`, the before-send hook in
+`sendMessage` after prompt variables, renderer buttons in `drawCodeBlockActions`, and a
+Tools > Plugins tab (enable, network, file access, reload, open folder, write example,
+per-plugin card with counts, errors, log). `docs/PLUGINS.md` is the reference;
+`--plugintest` loads plugins from a scratch folder and checks 24 things (metadata,
+counts, errors captured with line numbers, console log, fetch refused when off,
+commands with ctx, object / string / async / throwing tools, unknown tool, before-send
+rewrite, renderer, reload, storage survival, unload). Fixed on the way: runCommand's
+dispatch block captured the caller's string references and ran after they were gone
+(commands silently did nothing) - it copies them now; JS errors are reported through
+`toString` (an Error's own properties are not enumerable, so JSON gave "{}"). Verified
+against a scratch server with qwen3:8b: Tools > Plugins wrote the example plugin and
+listed "2 commands - 1 tool - 1 before-send hook - 1 renderer"; the palette showed
+"Word count of the clipboard - plugin: Example" and running it toasted "4 words on the
+clipboard"; "!shout hello there..." went out as "HELLO THERE, ..."; a seeded ```csv
+block got a "Table" button that opened the plugin's HTML table in the artifact pane;
+appending a comment to example.js produced exactly one "1 plugin loaded" toast; with the
+MCP toggle on, "use the word_count tool" produced an approval card "Example wants to run
+word_count", Allow once ran it ({"words": 9}) and the answer said 9 words, all saved.
+Not delivered from the item's wording: plugin-defined panes (an ImGui pane from JS has
+no good shape yet; openArtifact gives plugins an HTML surface instead) and markdown
+renderers beyond code blocks.

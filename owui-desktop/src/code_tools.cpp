@@ -17,6 +17,8 @@
 #include <unistd.h>
 
 #include "app.h"
+
+#include "plugins/plugin_host.h"
 #include "core/async.h"
 #include "core/common.h"
 #include "imgui_stdlib.h"
@@ -1117,6 +1119,20 @@ void App::drawCodeBlockActions(const std::string& code, const std::string& langu
   ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
   if (isArtifactLanguage(language, code)) {
     if (widgets::ghostButton("Preview")) openArtifact(code, language);
+    ImGui::SameLine();
+  }
+  // Plugin renderers for this block's language open their HTML in the artifact pane.
+  for (const plugins::Renderer& renderer : plugins::Host::instance().renderers()) {
+    if (renderer.language != core::lower(language)) continue;
+    ImGui::PushID(renderer.pluginId.c_str());
+    if (widgets::ghostButton(renderer.label.c_str())) {
+      std::string error;
+      const std::string html = plugins::Host::instance().render(renderer.pluginId, language, code, &error);
+      if (error.empty()) openArtifact(html, "html");
+      else widgets::toastError(renderer.pluginName + ": " + error);
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rendered by the %s plugin", renderer.pluginName.c_str());
+    ImGui::PopID();
     ImGui::SameLine();
   }
   const bool runBusy = !runnable || (run && run->running);

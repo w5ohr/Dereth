@@ -423,6 +423,18 @@ class App {
   void drawSamplingPanel();              // the "##chatparams" popup body
   bool hasSamplingParams() const;        // anything set besides the system prompt
 
+  // --- plugins (plugins/plugin_integration.cpp) -----------------------------
+  // JavaScript plugins: palette commands, model tools, before-send hooks,
+  // code-block renderers; hot-reloaded from the plugins folder.
+  void pluginsInit();
+  void pluginsShutdown();
+  void pluginsReload();
+  void pluginsTick();
+  Json pluginSnapshot() const;               // the `ctx` a plugin receives
+  void drawPluginsSection(float width);
+  int pluginWatchToken = -1;
+  double pluginReloadAt = 0.0;
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

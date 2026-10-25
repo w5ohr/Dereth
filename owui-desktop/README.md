@@ -248,6 +248,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Plugins:** JavaScript files in `~/Library/Application Support/Open WebUI
+  Desktop/plugins/` run in JavaScriptCore and register palette commands,
+  tools the model can call (next to MCP tools, same approvals), before-send
+  prompt rewrites and code-block renderers through a small `owui` API
+  (toast, notify, insert, send, openArtifact, clipboard, fetch, files,
+  per-plugin storage). They hot-reload on save; Tools ▸ Plugins lists them
+  with errors and logs, writes a documented example and can switch network
+  or file access off. API reference: [docs/PLUGINS.md](docs/PLUGINS.md).
+  `Open WebUI --plugintest` runs the host's offline checks.
 - **Agent mode:** the brain icon in the composer turns the prompt into a
   goal: the model plans it into steps (JSON, capped), carries each step out
   with the MCP tool loop, judges its own outcome and retries with the
