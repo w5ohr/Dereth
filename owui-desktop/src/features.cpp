@@ -319,9 +319,8 @@ void App::updateHandoffAndSpotlight() {
 }
 
 void App::applyTheme() {
-  std::string name = settings().theme;
-  if (name == "system") name = native::systemIsDark() ? "dark" : "light";
-  theme::apply(name);
+  theme::setOverrides(themeOverridesForCurrent());   // theme editor + server accent
+  theme::apply(effectiveThemeName());
 }
 
 // ----------------------------------------------------------------- palette
@@ -387,6 +386,7 @@ void App::drawPalette() {
   add("Smart folders and tags (rules)", "settings", [this] { pane = Pane::Settings; });
   add("Keyboard shortcuts cheat sheet", "command", [this] { showCheatSheet = true; });
   add("Shortcut editor (rebind keys, Vim mode)", "settings", [this] { pane = Pane::Settings; });
+  add("Theme editor (colours, VS Code / Base16 import, server accent)", "settings", [this] { pane = Pane::Settings; });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;
     for (const std::string& id : chat.branch()) {

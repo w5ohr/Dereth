@@ -505,6 +505,7 @@ int runLibrarySelfTest();
 int runSmartFoldersSelfTest();
 int runHybridSelfTest();
 int runKeymapSelfTest();
+int runThemeSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -548,6 +549,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--foldertest") return runSmartFoldersSelfTest();
     if (std::string(argv[i]) == "--hybridtest") return runHybridSelfTest();
     if (std::string(argv[i]) == "--keymaptest") return runKeymapSelfTest();
+    if (std::string(argv[i]) == "--themetest") return runThemeSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

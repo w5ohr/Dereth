@@ -617,6 +617,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   before. Overrides live in settings (`keymap`). `Open WebUI --keymaptest`
   covers chord parsing, defaults, overrides, conflicts, the menu key
   equivalents and the Vim state machine.
+- **Theme editor:** Settings ▸ Theme editor shows the fifteen palette
+  colours of the current theme (dark, light or midnight; "system" edits the
+  one in use) as colour wells that apply as you drag, with the hex beside
+  each, Reset per colour and Reset all. Import a VS Code theme (JSON with
+  comments) or a Base16 scheme (YAML or JSON) to fill the slots at once;
+  Copy as JSON exports them. A server accent gives each server its own
+  accent colour so the header, buttons and highlights tell you which
+  instance you are on. Overrides live in settings (`themeOverrides`,
+  `serverAccents`). `Open WebUI --themetest` covers hex parsing, the slot
+  table, overrides, the importers and the export.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -10,6 +10,26 @@ namespace {
 
 Palette gPalette;
 bool gDark = true;
+std::map<std::string, ImU32> gOverrides;
+
+ImU32* slotRef(Palette& p, const std::string& id) {
+  if (id == "accent") return &p.accent;
+  if (id == "accentHover") return &p.accentHover;
+  if (id == "bg") return &p.bg;
+  if (id == "panel") return &p.panel;
+  if (id == "panelAlt") return &p.panelAlt;
+  if (id == "border") return &p.border;
+  if (id == "text") return &p.text;
+  if (id == "textDim") return &p.textDim;
+  if (id == "textFaint") return &p.textFaint;
+  if (id == "userBubble") return &p.userBubble;
+  if (id == "assistantBubble") return &p.assistantBubble;
+  if (id == "codeBg") return &p.codeBg;
+  if (id == "success") return &p.success;
+  if (id == "warning") return &p.warning;
+  if (id == "danger") return &p.danger;
+  return nullptr;
+}
 
 ImU32 rgb(int r, int g, int b, int a = 255) { return IM_COL32(r, g, b, a); }
 
@@ -150,6 +170,10 @@ void apply(const std::string& name) {
     gPalette.assistantBubble = rgb(0, 0, 0);
   }
 
+  for (const auto& [slot, value] : gOverrides) {
+    if (ImU32* ref = slotRef(gPalette, slot)) *ref = value;
+  }
+
   ImVec4* colors = style.Colors;
   colors[ImGuiCol_Text] = toVec4(gPalette.text);
   colors[ImGuiCol_TextDisabled] = toVec4(gPalette.textFaint);
@@ -202,6 +226,8 @@ void apply(const std::string& name) {
   colors[ImGuiCol_NavCursor] = toVec4(gPalette.accent);
   colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, gDark ? 0.65f : 0.35f);
 }
+
+void setOverrides(const std::map<std::string, ImU32>& overrides) { gOverrides = overrides; }
 
 const Palette& palette() { return gPalette; }
 bool isDark() { return gDark; }

@@ -1581,3 +1581,24 @@ way: a bare key could be captured (it would have stolen typing), and the modifie
 mapping used io.KeySuper where ImGui's macOS mode reports Cmd as KeyCtrl. Not covered:
 Vim keys in the GUI (self-test only), unbinding, Reset all, and Ctrl/Option chords on
 menu items.
+
+2026-10-25 68 (theme editor): `src/core/themeedit.*` (hex parse/format incl. #rgb and
+alpha; lighten / hoverFor; the fifteen palette slots with labels; overrides per theme
+name in extra["themeOverrides"] with canonical hex and unknown slots ignored;
+serverAccent / withServerAccent in extra["serverAccents"]; `importTheme` for VS Code
+themes - JSONC comments and trailing commas stripped, ~15 colour keys mapped with
+fallbacks, hover derived - and Base16 schemes in YAML or JSON; `exportJson`).
+`src/ui/theme.*`: `setOverrides` lays slot overrides over the base palette inside
+apply(). `src/theme_editor.cpp`: `effectiveThemeName` ("system" resolved),
+`themeOverridesForCurrent` (theme overrides + the active server's accent and derived
+hover), `applyTheme` now sets them before theme::apply and runs once at init; Settings
+"THEME EDITOR" card under Appearance - a colour well per slot applying as you drag, hex
+beside it, Reset per slot, Reset all, Import VS Code / Base16 theme..., Copy as JSON, and
+a Server accent well with Clear. Palette: "Theme editor". `--themetest` runs 11 offline
+checks. Verified on a scratch home with seeded dark overrides (accent #e0453c, hover,
+bg #101820, panel #182230): the app launched with the red accent and navy background,
+the card showed the four overridden slots with Reset; Reset on Accent restored the blue
+accent live and removed only that key from settings; Copy as JSON put the three remaining
+overrides on the clipboard; Reset all restored the default look and removed
+themeOverrides from settings. Not covered: dragging a colour well, the Import open panel
+(importers self-test only), the server accent well, light and midnight themes.

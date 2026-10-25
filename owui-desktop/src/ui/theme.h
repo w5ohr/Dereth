@@ -1,6 +1,7 @@
 // Colors and fonts. Themes mirror Open WebUI's dark/light palettes.
 #pragma once
 
+#include <map>
 #include <string>
 
 #include "imgui.h"
@@ -41,6 +42,9 @@ void pushMono();
 void pushScaled(float multiplier);   // relative to style.FontSizeBase
 void pop();
 void apply(const std::string& name);
+// Colour overrides by slot id (accent, bg, panel, ...) laid over the named
+// theme on the next apply(); the theme editor sets them.
+void setOverrides(const std::map<std::string, ImU32>& overrides);
 const Palette& palette();
 bool isDark();
 

@@ -323,6 +323,7 @@ void App::init() {
   });
   auditInit();
   trafficInit();
+  applyTheme();   // lays the theme editor's overrides and the server accent over the base theme
   mcpInit();
   pluginsInit();
   refreshPrivateChats();

@@ -796,6 +796,11 @@ class App {
   void drawShortcutsSection(float width);
   void drawCheatSheet();
 
+  // --- theme editor (theme_editor.cpp) -------------------------------------
+  std::string effectiveThemeName() const;               // "system" resolved to dark / light
+  std::map<std::string, ImU32> themeOverridesForCurrent() const;
+  void drawThemeEditorSection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.
