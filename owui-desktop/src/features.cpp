@@ -216,6 +216,7 @@ void App::installNativeHooks() {
     }
     return recent;
   };
+  callbacks.sleepWake = [this](bool sleeping) { onSleepWake(sleeping); };
   native::install(callbacks);
 
   const Json& extra = settings().extra;
@@ -347,6 +348,8 @@ void App::drawPalette() {
   });
   add("Health (CPU, GPU, memory, models in VRAM)", "command", [this] { pane = Pane::Tools; });
   add("Budgets (token and cost caps)", "command", [this] { pane = Pane::Tools; });
+  add("Warm the model now (load it into memory)", "command", [this] { warmModelNow(false); });
+  add("Release the model from memory", "command", [this] { warmModelNow(true); });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {
     if (core::trim(settings().extra.value("vaultFolder", std::string())).empty()) {

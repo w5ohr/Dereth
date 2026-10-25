@@ -328,6 +328,7 @@ void App::init() {
 }
 
 void App::shutdown() {
+  warmupOnQuit();
   stopAllStreams();
   if (terminal) terminal->stop();
   stopFolderSync();
@@ -1575,6 +1576,7 @@ void App::frame() {
     tickChatIndex();
     tickVaultSync();
     tickHealth();
+    tickWarmup();
     if (serverReachable) syncMirror(false);
 
     // The socket drops when the server restarts or the network blips; bring

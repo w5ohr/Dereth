@@ -603,6 +603,7 @@ Result Client::ollamaShow(const std::string& model) {
 Result Client::ollamaUnload(const std::string& model) {
   return post("/ollama/api/unload", {{"model", model}});
 }
+Result Client::ollamaGenerate(const Json& payload) { return post("/ollama/api/generate", payload, 300); }
 Result Client::ollamaDelete(const std::string& model) {
   return del("/ollama/api/delete", {{"model", model}});
 }

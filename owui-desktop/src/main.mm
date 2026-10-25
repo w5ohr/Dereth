@@ -454,6 +454,7 @@ int runVaultSelfTest();
 int runHealthSelfTest();
 int runModelLibSelfTest();
 int runBudgetSelfTest();
+int runWarmupSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -483,6 +484,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--healthtest") return runHealthSelfTest();
     if (std::string(argv[i]) == "--modellibtest") return runModelLibSelfTest();
     if (std::string(argv[i]) == "--budgettest") return runBudgetSelfTest();
+    if (std::string(argv[i]) == "--warmuptest") return runWarmupSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

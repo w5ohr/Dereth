@@ -23,6 +23,7 @@ struct Callbacks {
   std::function<void(bool dark)> appearanceChanged;
   std::function<std::vector<std::pair<std::string, std::string>>()> recentChats;
   std::function<void()> captureScreen;                    // capture hotkey / menu bar extra
+  std::function<void(bool sleeping)> sleepWake;           // NSWorkspace will-sleep / did-wake
 };
 
 void install(const Callbacks& callbacks);

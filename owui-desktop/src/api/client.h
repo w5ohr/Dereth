@@ -263,6 +263,7 @@ class Client {
   Result ollamaPs();
   Result ollamaShow(const std::string& model);
   Result ollamaUnload(const std::string& model);
+  Result ollamaGenerate(const Json& payload);   // POST /ollama/api/generate, non-streaming (warmup: empty prompt + keep_alive)
   Result ollamaDelete(const std::string& model);
   // Pull streams progress lines; onLine gets each JSON object.
   Result ollamaPull(const std::string& model,

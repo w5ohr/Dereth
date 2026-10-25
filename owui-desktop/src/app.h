@@ -688,6 +688,15 @@ class App {
   void drawBudgetsCard(float width);
   budgets::Spend budgetSpend(bool force);
 
+  // --- warmup and residency (warmup_pane.cpp) -------------------------------
+  void tickWarmup();
+  void warmModelNow(bool release);
+  void onSleepWake(bool sleeping);
+  void warmupOnQuit();
+  void drawWarmupSection(float width);
+  std::string warmupModel() const;
+  std::string warmupStatus;
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

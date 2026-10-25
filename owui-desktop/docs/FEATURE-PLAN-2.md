@@ -1249,3 +1249,26 @@ the caps and a red gauge "46.3k / 300 today, tokens"; a slider that printed 1% i
 past the cap), the per-chat cap and the dollar cap in the GUI (same code path, self-test
 only), Hold it and Open budgets.
 
+2026-10-25 III (77 warmup and residency): `src/core/warmup.{h,cpp}` (app-free: Plan
+{enabled (default off), keepAliveMinutes 30, onlyWhileFrontmost, releaseOnSleep,
+releaseOnQuit} <-> extra["warmup"]; loadPayload = /api/generate with an empty prompt and
+keep_alive "<n>m", releasePayload with "0"; shouldRenew at half the keep-alive, never
+hidden when frontmost-only, at least a minute apart). `src/warmup_pane.cpp`: tickWarmup
+warms the selected Ollama model ~5 s after launch (a workspace model maps to its base;
+non-Ollama models are skipped) and renews while the app is in front; api_.ollamaGenerate
+(new, POST /ollama/api/generate, 300 s) with a direct fallback to the Ollama URL;
+onSleepWake from a new native sleepWake callback (NSWorkspace will-sleep / did-wake
+observers in native::install) releases before sleep and re-warms after; warmupOnQuit
+releases on shutdown when asked; Settings > Warmup and residency card (enable, keep-alive
+slider, the three checkboxes, status, Warm now / Release now); palette "Warm the model
+now" / "Release the model". `--warmuptest` runs 6 offline checks. Verified on a scratch
+server with warmup on and a 2-minute keep-alive: qwen3:8b, unloaded beforehand, was
+resident 25 s after launch with expiry two minutes out; 70 s later the expiry had moved
+on by the renewal; Release now first appeared to do nothing - the unload ran (869 ms)
+but the next tick re-warmed at once because a release reset the "never warmed" state -
+fixed with a hold flag that Warm now or a wake clears; after that Release now left Ollama
+with nothing resident ten seconds later and the status read "released". Not covered:
+real sleep / wake (the observers are registered; the handler is the same code the
+Release / Warm buttons use), release on quit, and the frontmost gate (the app was in
+front throughout).
+

@@ -162,6 +162,19 @@ void install(const Callbacks& callbacks) {
   gCallbacks = callbacks;
   if (!gBridge) gBridge = [[OWUINativeBridge alloc] init];
 
+  // Sleep and wake, for the model warmup (released before sleep, re-warmed after).
+  static bool sleepObserved = false;
+  if (!sleepObserved) {
+    sleepObserved = true;
+    NSNotificationCenter* center = [NSWorkspace sharedWorkspace].notificationCenter;
+    [center addObserverForName:NSWorkspaceWillSleepNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
+      if (gCallbacks.sleepWake) gCallbacks.sleepWake(true);
+    }];
+    [center addObserverForName:NSWorkspaceDidWakeNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
+      if (gCallbacks.sleepWake) gCallbacks.sleepWake(false);
+    }];
+  }
+
   NSApp.servicesProvider = gBridge;
   NSUpdateDynamicServices();
 

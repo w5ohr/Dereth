@@ -475,6 +475,14 @@ Things a browser tab can't do, plus the workflow features built on top:
   budgets, and the text goes back into the composer. While a cap is set the
   chat header shows a "budget NN%" pill whose tooltip has the numbers.
   `Open WebUI --budgettest` covers the arithmetic.
+- **Warmup and residency:** Settings ▸ Warmup loads the selected Ollama
+  model a few seconds after launch and renews its keep-alive at half the
+  interval you set while the app is in front, so the first token comes at
+  once; it is released before the Mac sleeps and warmed again on wake, and
+  optionally released on quit. Off by default, since pinning a model on a
+  shared Ollama holds its memory for everyone. Warm now / Release now
+  buttons and palette commands; Tools ▸ Health shows what is resident.
+  `Open WebUI --warmuptest` covers the schedule.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

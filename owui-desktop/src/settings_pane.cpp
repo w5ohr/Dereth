@@ -108,6 +108,10 @@ void App::drawSettingsPane() {
   drawVaultSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("WARMUP AND RESIDENCY");
+  drawWarmupSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("VOICE");
   card("voice", [&] {
     if (!gVoicesLoaded) {
