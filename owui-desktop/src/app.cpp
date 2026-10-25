@@ -1520,7 +1520,7 @@ void App::frame() {
   // only shows while the chat pane placed it last frame and nothing modal is
   // open over the window.
   {
-    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground ||
+    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet ||
                          showProjectFiles ||
                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     native::composerSetVisible(composerShownThisFrame && !overlay);
@@ -1681,6 +1681,7 @@ void App::frame() {
     drawQuickAsk();
     drawContextInspector();
     drawPlayground();
+    drawCheatSheet();
     drawPromptForm();
     drawRedactionSheet();
   drawBudgetSheet();
@@ -1702,29 +1703,36 @@ void App::frame() {
 }
 
 void App::handleShortcuts() {
-  if (!signedIn_) return;
+  if (!signedIn_ || shortcutCapturing()) return;
+  shortcutsApplyMenusOnce();
   ImGuiIO& io = ImGui::GetIO();
-  if (!io.KeySuper) return;
+  if (shortcutPressed("cheatSheet")) showCheatSheet = !showCheatSheet;
+  if (!(io.KeySuper || io.KeyCtrl || io.KeyAlt)) return;   // plain keys belong to the panes
 
-  // Cmd+1..0 jump between panes, matching the order of the rail.
-  const std::pair<ImGuiKey, Pane> jumps[] = {
-      {ImGuiKey_1, Pane::Chat},     {ImGuiKey_2, Pane::Notes},
-      {ImGuiKey_3, Pane::Channels}, {ImGuiKey_4, Pane::Workspace},
-      {ImGuiKey_5, Pane::Images},   {ImGuiKey_6, Pane::Files},
-      {ImGuiKey_7, Pane::Memories}, {ImGuiKey_8, Pane::Admin},
-      {ImGuiKey_9, Pane::Console},  {ImGuiKey_0, Pane::Settings},
+  // Pane jumps and the rest follow the keymap (Settings > Keyboard shortcuts);
+  // menu-owned chords usually fire through the menu first, this is the fallback.
+  const std::pair<const char*, Pane> jumps[] = {
+      {"pane.chat", Pane::Chat},         {"pane.notes", Pane::Notes},     {"pane.channels", Pane::Channels}, {"pane.workspace", Pane::Workspace},
+      {"pane.images", Pane::Images},     {"pane.files", Pane::Files},     {"pane.memories", Pane::Memories}, {"pane.library", Pane::Library},
+      {"pane.admin", Pane::Admin},       {"pane.console", Pane::Console}, {"pane.settings", Pane::Settings}, {"pane.tools", Pane::Tools},
   };
-  for (const auto& [key, target] : jumps) {
-    if (ImGui::IsKeyPressed(key, false)) {
+  for (const auto& [id, target] : jumps) {
+    if (shortcutPressed(id)) {
       if (target == Pane::Admin && !isAdmin()) continue;
       pane = target;
     }
   }
+  if (shortcutPressed("chat.new")) newChat();
+  if (shortcutPressed("view.sidebar")) sidebarVisible = !sidebarVisible;
+  if (shortcutPressed("chat.refresh") && pane == Pane::Chat) refreshChats(false);
+  if (shortcutPressed("chat.stop")) stopAllStreams();
+}
 
-  if (ImGui::IsKeyPressed(ImGuiKey_N, false)) newChat();
-  if (ImGui::IsKeyPressed(ImGuiKey_B, false)) sidebarVisible = !sidebarVisible;
-  if (ImGui::IsKeyPressed(ImGuiKey_R, false) && pane == Pane::Chat) refreshChats(false);
-  if (ImGui::IsKeyPressed(ImGuiKey_Period, false)) stopAllStreams();
+void App::shortcutsApplyMenusOnce() {
+  static bool done = false;
+  if (done) return;
+  done = true;
+  shortcutsApplyMenus();
 }
 
 void App::drawLogin() {

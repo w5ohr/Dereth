@@ -126,6 +126,10 @@ void App::drawSettingsPane() {
   drawSmartFoldersSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("KEYBOARD SHORTCUTS");
+  drawShortcutsSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("ACCOUNT");
   card("account", [&] {
     field("Name", user_.value("name", ""));

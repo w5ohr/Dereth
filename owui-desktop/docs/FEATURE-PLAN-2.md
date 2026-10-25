@@ -1555,3 +1555,29 @@ local-index.db held 3 chunks and 3 FTS rows; searching "recalibrate_foghorn_comp
 listed foghorn.py first as "both - exact match" (0.049) with the two notes after it as
 "vector" (0.016). Not covered: the embedder-down fallback in the GUI, turning Hybrid off,
 and a backfill over a pre-existing index (self-test only).
+
+2026-10-25 126 (shortcut editor): `src/core/keymap.*` (Chord parse/format/pretty with
+word and ⌘⇧⌥⌃ forms and key aliases; 28 defaults across General / Chat / View / Panes
+with a `menu` flag for the ones a native menu item owns; overrides as {id: chord} with
+unbinding; `conflicts`; `menuEquivalent` -> NSMenuItem key + modifier bits incl. specials
+and F-keys; the Vim state machine `vimStep` with gg within a second, G, j/k, /, y, i/a/o,
+r/p/s/e, Escape; `cheatSheet`). `src/shortcut_editor.cpp`: keymap loaded from
+extra["keymap"]; `shortcutsApplyMenus` pushes key equivalents into the native menu items
+(main.mm now tags every item by shortcut id, `native::setMenuShortcut` /
+`suspendMenuShortcuts`); `shortcutPressed` reads modifiers the way ImGui's macOS mode
+reports them (io.KeyCtrl is Cmd); handleShortcuts rewritten over the keymap (pane jumps
+incl. Library and Tools, new chat, sidebar, refresh, stop, cheat sheet); `handleVimKeys`
+hooked into the focused-message keys; Settings "KEYBOARD SHORTCUTS" card with click-to-
+capture (menu equivalents suspended while capturing, a modifier required unless an F-key,
+Escape cancels, Backspace unbinds), conflicts in red with the other action on hover,
+per-row Reset and Reset all, Vim keys switch, Cheat sheet button; the ⌘/ cheat-sheet
+modal with Copy / Edit shortcuts. `--keymaptest` runs 10 offline checks. Verified on a
+scratch server: the card listed every binding; capturing ⌘⇧B for "Toggle the sidebar"
+and ⌘N for "Refresh the chat list" saved {"view.sidebar": "shift+cmd+b", "chat.refresh":
+"cmd+n"}, both ⌘N rows turned red with "Also bound to: New chat" on hover and Reset
+appeared; in the chat pane the rebound ⌘⇧B hid the sidebar (through the updated menu
+item) and ⌘/ opened the cheat sheet showing the new binding. Two defects fixed on the
+way: a bare key could be captured (it would have stolen typing), and the modifier
+mapping used io.KeySuper where ImGui's macOS mode reports Cmd as KeyCtrl. Not covered:
+Vim keys in the GUI (self-test only), unbinding, Reset all, and Ctrl/Option chords on
+menu items.

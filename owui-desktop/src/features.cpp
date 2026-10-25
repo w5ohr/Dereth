@@ -385,6 +385,8 @@ void App::drawPalette() {
   add("Apply smart folder rules now", "command", [this] { applySmartFolders(true); });
   add("Auto-tag untagged chats now (small model)", "command", [this] { autoTagChats(true); });
   add("Smart folders and tags (rules)", "settings", [this] { pane = Pane::Settings; });
+  add("Keyboard shortcuts cheat sheet", "command", [this] { showCheatSheet = true; });
+  add("Shortcut editor (rebind keys, Vim mode)", "settings", [this] { pane = Pane::Settings; });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;
     for (const std::string& id : chat.branch()) {
@@ -1117,6 +1119,7 @@ void App::handleKeyboardNavigation(const std::vector<std::string>& path) {
       io.KeyCtrl) {
     return;
   }
+  if (handleVimKeys(path, index)) return;   // Vim keys (Settings > Keyboard shortcuts)
   const Message& m = chat.messages.at(focusedMessageId);
   // Plain letters act on the focused message: c copy, r regenerate, p pin,
   // e edit, s speak. Arrow keys without Option move too, once out of the

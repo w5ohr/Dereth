@@ -28,6 +28,12 @@ struct Callbacks {
 
 void install(const Callbacks& callbacks);
 
+// Menu items registered by buildMenuBar (main.mm) by shortcut id; `key` is
+// the NSMenuItem key equivalent ("" unbinds), `mods` bits: 1 cmd, 2 shift,
+// 4 alt, 8 ctrl.
+void setMenuShortcut(const std::string& id, const std::string& key, int mods);
+void suspendMenuShortcuts();   // clears every registered key equivalent (the editor is capturing)
+
 // Global hotkey (Carbon, no accessibility permission needed). Returns false if
 // the combination is taken.
 bool registerHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift);

@@ -606,6 +606,17 @@ Things a browser tab can't do, plus the workflow features built on top:
   both lists, the vectors or the text; the Hybrid checkbox in Tools ▸ Local
   index turns it off. `Open WebUI --hybridtest` covers tokenising, the FTS
   table and triggers, BM25 search and the fusion.
+- **Shortcut editor:** Settings ▸ Keyboard shortcuts lists every binding -
+  palette, Quick Ask, panes, sidebar, find, compare, voice, stop, export,
+  capture and more. Click one and press the new keys (Escape cancels,
+  Backspace unbinds); the native menu items follow, two actions on the same
+  keys are flagged red with the other named on hover, and Reset puts a
+  binding or all of them back. ⌘/ opens a cheat sheet. Vim keys for the
+  transcript (optional): j / k move between messages, gg / G jump to the
+  ends, / finds, y copies, i returns to the composer, with r, p, s and e as
+  before. Overrides live in settings (`keymap`). `Open WebUI --keymaptest`
+  covers chord parsing, defaults, overrides, conflicts, the menu key
+  equivalents and the Vim state machine.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

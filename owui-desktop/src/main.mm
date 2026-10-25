@@ -336,6 +336,29 @@ static void injectChord(ImGuiKey key, bool shift = false) {
 
 @end
 
+static NSMutableDictionary<NSString*, NSMenuItem*>* gMenuItems = nil;
+static void tagMenuItem(const char* id, NSMenuItem* item) {
+  if (!gMenuItems) gMenuItems = [NSMutableDictionary dictionary];
+  gMenuItems[[NSString stringWithUTF8String:id]] = item;
+}
+
+namespace native {
+void setMenuShortcut(const std::string& id, const std::string& key, int mods) {
+  NSMenuItem* item = gMenuItems ? gMenuItems[[NSString stringWithUTF8String:id.c_str()]] : nil;
+  if (!item) return;
+  item.keyEquivalent = [NSString stringWithUTF8String:key.c_str()];
+  NSEventModifierFlags flags = 0;
+  if (mods & 1) flags |= NSEventModifierFlagCommand;
+  if (mods & 2) flags |= NSEventModifierFlagShift;
+  if (mods & 4) flags |= NSEventModifierFlagOption;
+  if (mods & 8) flags |= NSEventModifierFlagControl;
+  item.keyEquivalentModifierMask = flags;
+}
+void suspendMenuShortcuts() {
+  for (NSString* id in gMenuItems) gMenuItems[id].keyEquivalent = @"";
+}
+}  // namespace native
+
 static void buildMenuBar() {
   NSMenu* menuBar = [[NSMenu alloc] init];
   NSMenuItem* appItem = [[NSMenuItem alloc] init];
@@ -351,11 +374,12 @@ static void buildMenuBar() {
   NSMenuItem* fileItem = [[NSMenuItem alloc] init];
   [menuBar addItem:fileItem];
   NSMenu* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
-  [fileMenu addItemWithTitle:@"New Chat" action:@selector(newChat:) keyEquivalent:@"n"];
-  [fileMenu addItemWithTitle:@"Quick Ask" action:@selector(quickAsk:) keyEquivalent:@"j"];
+  tagMenuItem("chat.new", [fileMenu addItemWithTitle:@"New Chat" action:@selector(newChat:) keyEquivalent:@"n"]);
+  tagMenuItem("quickAsk", [fileMenu addItemWithTitle:@"Quick Ask" action:@selector(quickAsk:) keyEquivalent:@"j"]);
   {
     NSMenuItem* item = [fileMenu addItemWithTitle:@"Open Chat in New Window" action:@selector(openChatInNewWindow:) keyEquivalent:@"n"];
     item.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    tagMenuItem("chat.newWindow", item);
     [fileMenu addItemWithTitle:@"Open Chat as Floating Mini Window" action:@selector(openMiniWindow:) keyEquivalent:@""];
   }
   {
@@ -363,12 +387,13 @@ static void buildMenuBar() {
                                               action:@selector(captureScreen:)
                                        keyEquivalent:@"2"];
     capture.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    tagMenuItem("chat.capture", capture);
   }
   NSMenuItem* exportItem = [fileMenu addItemWithTitle:@"Export Chat" action:nil keyEquivalent:@""];
   NSMenu* exportMenu = [[NSMenu alloc] initWithTitle:@"Export Chat"];
   [exportMenu addItemWithTitle:@"Markdown..." action:@selector(exportMarkdown:) keyEquivalent:@""];
   [exportMenu addItemWithTitle:@"HTML..." action:@selector(exportHtml:) keyEquivalent:@""];
-  [exportMenu addItemWithTitle:@"PDF..." action:@selector(exportPdf:) keyEquivalent:@"p"];
+  tagMenuItem("chat.export", [exportMenu addItemWithTitle:@"PDF..." action:@selector(exportPdf:) keyEquivalent:@"p"]);
   exportItem.submenu = exportMenu;
   [fileMenu addItemWithTitle:@"Close Window" action:@selector(performClose:) keyEquivalent:@"w"];
   fileItem.submenu = fileMenu;
@@ -384,26 +409,27 @@ static void buildMenuBar() {
   [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
   [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
   [editMenu addItem:[NSMenuItem separatorItem]];
-  [editMenu addItemWithTitle:@"Find in Chat" action:@selector(findInChat:) keyEquivalent:@"f"];
+  tagMenuItem("chat.find", [editMenu addItemWithTitle:@"Find in Chat" action:@selector(findInChat:) keyEquivalent:@"f"]);
   editItem.submenu = editMenu;
 
   NSMenuItem* viewItem = [[NSMenuItem alloc] init];
   [menuBar addItem:viewItem];
   NSMenu* viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
-  [viewMenu addItemWithTitle:@"Command Palette" action:@selector(openPalette:) keyEquivalent:@"k"];
+  tagMenuItem("palette", [viewMenu addItemWithTitle:@"Command Palette" action:@selector(openPalette:) keyEquivalent:@"k"]);
   [viewMenu addItem:[NSMenuItem separatorItem]];
   struct PaneEntry {
     const char* title;
     const char* key;
     app::Pane pane;
+    const char* id;
   };
   const PaneEntry entries[] = {
-      {"Chats", "1", app::Pane::Chat},       {"Notes", "2", app::Pane::Notes},
-      {"Channels", "3", app::Pane::Channels}, {"Workspace", "4", app::Pane::Workspace},
-      {"Images", "5", app::Pane::Images},    {"Files", "6", app::Pane::Files},
-      {"Memories", "7", app::Pane::Memories}, {"Admin", "8", app::Pane::Admin},
-      {"API Console", "9", app::Pane::Console}, {"Settings", "0", app::Pane::Settings},
-      {"Tools", "-", app::Pane::Tools},
+      {"Chats", "1", app::Pane::Chat, "pane.chat"},       {"Notes", "2", app::Pane::Notes, "pane.notes"},
+      {"Channels", "3", app::Pane::Channels, "pane.channels"}, {"Workspace", "4", app::Pane::Workspace, "pane.workspace"},
+      {"Images", "5", app::Pane::Images, "pane.images"},    {"Files", "6", app::Pane::Files, "pane.files"},
+      {"Memories", "7", app::Pane::Memories, "pane.memories"}, {"Admin", "8", app::Pane::Admin, "pane.admin"},
+      {"API Console", "9", app::Pane::Console, "pane.console"}, {"Settings", "0", app::Pane::Settings, "pane.settings"},
+      {"Tools", "-", app::Pane::Tools, "pane.tools"},
   };
   for (const PaneEntry& entry : entries) {
     NSMenuItem* item =
@@ -412,18 +438,20 @@ static void buildMenuBar() {
                             keyEquivalent:[NSString stringWithUTF8String:entry.key]];
     item.tag = static_cast<NSInteger>(entry.pane);
     [viewMenu addItem:item];
+    tagMenuItem(entry.id, item);
   }
   [viewMenu addItem:[NSMenuItem separatorItem]];
-  [viewMenu addItemWithTitle:@"Toggle Sidebar" action:@selector(toggleSidebar:) keyEquivalent:@"b"];
+  tagMenuItem("view.sidebar", [viewMenu addItemWithTitle:@"Toggle Sidebar" action:@selector(toggleSidebar:) keyEquivalent:@"b"]);
   {
     NSMenuItem* item = [viewMenu addItemWithTitle:@"Float on Top" action:@selector(toggleFloating:) keyEquivalent:@"t"];
     item.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    tagMenuItem("view.float", item);
   }
-  [viewMenu addItemWithTitle:@"Compare Answers" action:@selector(toggleCompare:) keyEquivalent:@"d"];
-  [viewMenu addItemWithTitle:@"Pinned Messages" action:@selector(togglePins:) keyEquivalent:@"i"];
-  [viewMenu addItemWithTitle:@"What Was Sent" action:@selector(showInspector:) keyEquivalent:@"e"];
-  [viewMenu addItemWithTitle:@"Voice Conversation" action:@selector(toggleVoice:) keyEquivalent:@"u"];
-  [viewMenu addItemWithTitle:@"Stop Generating" action:@selector(stopGenerating:) keyEquivalent:@"."];
+  tagMenuItem("chat.compare", [viewMenu addItemWithTitle:@"Compare Answers" action:@selector(toggleCompare:) keyEquivalent:@"d"]);
+  tagMenuItem("chat.pins", [viewMenu addItemWithTitle:@"Pinned Messages" action:@selector(togglePins:) keyEquivalent:@"i"]);
+  tagMenuItem("chat.inspector", [viewMenu addItemWithTitle:@"What Was Sent" action:@selector(showInspector:) keyEquivalent:@"e"]);
+  tagMenuItem("chat.voice", [viewMenu addItemWithTitle:@"Voice Conversation" action:@selector(toggleVoice:) keyEquivalent:@"u"]);
+  tagMenuItem("chat.stop", [viewMenu addItemWithTitle:@"Stop Generating" action:@selector(stopGenerating:) keyEquivalent:@"."]);
   viewItem.submenu = viewMenu;
 
   NSMenuItem* windowItem = [[NSMenuItem alloc] init];
@@ -476,6 +504,7 @@ int runEvalSelfTest();
 int runLibrarySelfTest();
 int runSmartFoldersSelfTest();
 int runHybridSelfTest();
+int runKeymapSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -518,6 +547,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--librarytest") return runLibrarySelfTest();
     if (std::string(argv[i]) == "--foldertest") return runSmartFoldersSelfTest();
     if (std::string(argv[i]) == "--hybridtest") return runHybridSelfTest();
+    if (std::string(argv[i]) == "--keymaptest") return runKeymapSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

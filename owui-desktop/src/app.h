@@ -785,6 +785,17 @@ class App {
   void tickSmartFolders();
   void drawSmartFoldersSection(float width);
 
+  // --- shortcut editor (shortcut_editor.cpp) -------------------------------
+  bool showCheatSheet = false;
+  void shortcutsApplyMenus();                  // native menu key equivalents follow the keymap
+  void shortcutsApplyMenusOnce();
+  bool shortcutCapturing() const;              // the editor is waiting for keys: no shortcut fires
+  bool shortcutPressed(const std::string& id) const;
+  std::string shortcutLabel(const std::string& id) const;   // "⌘K", "" when unbound
+  bool handleVimKeys(const std::vector<std::string>& path, int index);   // true when a Vim key acted
+  void drawShortcutsSection(float width);
+  void drawCheatSheet();
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.
