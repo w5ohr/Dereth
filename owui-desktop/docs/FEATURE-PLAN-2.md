@@ -738,3 +738,25 @@ file(s) already match and were skipped" and opened the dialog with both diffs ("
 tests/test_app.py, and journalled both; the palette's Undo restored app.py's original
 text, removed the .bak and deleted the created test file. Not exercised: a write failure
 mid-transaction (the rollback path is the same `rollback` the Undo used).
+
+2026-10-24 III (72 model cards): `src/model_cards.cpp`. A card per model is seeded from
+the model list's `ollama` block (size, modified, details) and completed once through the
+server's /ollama/api/show passthrough (a workspace model unwraps to its base): family,
+parameter size and count, quantisation, architecture, trained context length, embedding
+width, layer count, capabilities, Modelfile PARAMETER defaults (stop lines skipped),
+system prompt, licence (general.license or the first line of the text). Shown as a
+tooltip on the picker rows (short delay) and on the header's model chip when one model
+is selected (the old "Choose one or more models" tip stays for multi-select); "Compare
+models..." in the picker and the palette opens a sortable table - model, family, params,
+quant, size, bits per weight (file size x 8 / parameter count), context, layers,
+capabilities - of every Ollama model, click a row to select it. Verified against a
+scratch server: the chip tooltip read "qwen3 - 8.2B - Q4_K_M - 4.9 GB / Context 40k
+tokens / 36 layers, 4096-wide embeddings, 5.1 bits/weight / Capabilities: completion,
+tools, thinking / Defaults: repeat_penalty=1 temperature=0.6 top_k=20 top_p=0.95 /
+Licence: apache-2.0"; the picker tooltip showed llama3.3:70b at 39.6 GB, 131k context,
+80 layers, 4.8 bits/weight; the table listed all eight models with the two qwen3-coder
+quants side by side (Q4_K_M 17.3 GB at 4.9 bits vs Q8_0 30.3 GB at 8.5). Fixed on the
+way: opening the table from inside the picker modal closed it at once (two root modals)
+- the picker now closes first; the table opens centred. Not done from the item's
+wording: nothing - the "pull metadata into picker tooltips; quant comparison table" is
+all there.

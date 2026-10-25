@@ -248,6 +248,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Model cards:** hover a model in the picker or the chat header's model
+  chip for what Ollama knows about it - family, parameters, quantisation,
+  size on disk, trained context, layers, bits per weight, capabilities,
+  Modelfile defaults, licence. "Compare models..." (picker or palette) lays
+  every Ollama model out in a sortable table so a quant is a look, not a
+  guess; click a row to select it.
 - **Multi-file apply:** when a reply names the files its code blocks belong
   to (`path=` in the fence, a `// file:` first line, or a heading / bold /
   inline-code path above the block), a folder icon in the reply's action row

@@ -444,6 +444,13 @@ class App {
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
 
+  // --- model cards (model_cards.cpp) ----------------------------------------
+  // Ollama `show` details per model, as tooltips and a comparison table.
+  const void* modelCard(const std::string& modelId);      // opaque; fetches on first use
+  bool drawModelCardTooltip(const std::string& modelId);
+  void openModelCompare();
+  void drawModelCompare();
+
   // --- context strategy (context_strategy.cpp) ------------------------------
   // What goes to the model once the chat outgrows its window: drop oldest,
   // sliding window, or a rolling summary; a popover previews the next send.

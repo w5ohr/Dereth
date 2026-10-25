@@ -71,7 +71,10 @@ void App::drawChatPane() {
     if (label.empty()) label = modelsLoading ? "Loading models..." : "Select a model";
     ImGui::AlignTextToFramePadding();
     if (ImGui::Button((label + "  v##modelbtn").c_str())) showModelPicker = true;
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Choose one or more models");
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && selectedModels.size() == 1) {
+      drawModelCardTooltip(selectedModels.front());
+    }
+    if (ImGui::IsItemHovered() && selectedModels.size() != 1) ImGui::SetTooltip("Choose one or more models");
 
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textDim));

@@ -1624,6 +1624,7 @@ void App::frame() {
   ImGui::End();
 
   if (showModelPicker) drawModelPicker();
+  drawModelCompare();
   if (signedIn_) {
     drawPalette();
     drawQuickAsk();
@@ -1761,6 +1762,7 @@ void App::drawModelPicker() {
       }
       ImGui::SameLine();
       ImGui::TextUnformatted(info.name.c_str());
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) drawModelCardTooltip(info.id);
       if (!info.description.empty()) {
         ImGui::SameLine();
         widgets::dimText("- %s", info.description.c_str());
@@ -1768,6 +1770,8 @@ void App::drawModelPicker() {
       ImGui::PopID();
     }
     ImGui::EndChild();
+    if (widgets::ghostButton("Compare models...")) openModelCompare();
+    ImGui::SameLine();
     if (widgets::primaryButton("Done", ImVec2(-FLT_MIN, 32))) showModelPicker = false;
     ImGui::EndPopup();
   }
