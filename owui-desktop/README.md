@@ -653,6 +653,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   in Settings ▸ Chat. `Open WebUI --virtualtest` covers the height memory
   and the skip decision; with OWUI_DEBUG the log reports "transcript: drew
   N of M messages in X ms" every two seconds.
+- **Menu-bar-only mode:** Settings ▸ Mac integration ▸ "Menu-bar only"
+  drops the Dock icon and app-switcher entry; the window still opens, and
+  closing it keeps the app running in the menu bar extra (Quick Ask, New
+  Chat, recent chats, Show Open WebUI, Quit), so the Option-Space hotkey and
+  scheduled prompts keep working with no window. "Open at login" registers
+  the app as a login item through the system's service manager (macOS 13+,
+  approval may be asked for in System Settings ▸ Login Items) so the extra
+  is there before any window. The palette toggles the mode. `Open WebUI
+  --menubartest` covers the preferences and the status words.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

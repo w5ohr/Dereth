@@ -34,6 +34,16 @@ void install(const Callbacks& callbacks);
 void setMenuShortcut(const std::string& id, const std::string& key, int mods);
 void suspendMenuShortcuts();   // clears every registered key equivalent (the editor is capturing)
 
+// Menu-bar-only mode: accessory activation policy (no Dock icon, no app
+// switcher entry); the window can still be shown from the menu bar extra
+// and closing it keeps the app running.
+void setMenuBarOnly(bool on);
+bool menuBarOnly();
+// Login item through SMAppService (macOS 13+). Status: 0 not registered,
+// 1 enabled, 2 requires approval, 3 not found. Returns false with `error` when the call failed.
+bool setLoginItem(bool on, std::string* error);
+int loginItemStatus();
+
 // Global hotkey (Carbon, no accessibility permission needed). Returns false if
 // the combination is taken.
 bool registerHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift);

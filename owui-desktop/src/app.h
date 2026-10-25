@@ -821,6 +821,10 @@ class App {
   bool messageControlsVisible(const std::string& messageId) const;   // hover / focus gate in reading mode
   void drawReadingModeSection(float width);
 
+  // --- menu-bar-only mode (menu_bar_only.cpp) -------------------------------
+  void setMenuBarOnly(bool on);
+  void drawMenuBarOnlySection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

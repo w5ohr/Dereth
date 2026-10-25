@@ -179,7 +179,7 @@ void App::installNativeHooks() {
   callbacks.quickAsk = [this] { openQuickAsk(); };
   callbacks.captureScreen = [this] { captureScreenToChat(true); };
   callbacks.newChat = [this] { newChat(); };
-  callbacks.showWindow = [] {};
+  callbacks.showWindow = [] { native::showMainWindow(); };   // the menu bar extra's "Show Open WebUI"
   callbacks.openChat = [this](const std::string& id) {
     async::post([this, id] { openChat(id); });
   };
@@ -240,6 +240,10 @@ void App::installNativeHooks() {
     }
   }
   native::setStatusItemVisible(extra.value("menuBarExtra", true));
+  if (extra.value("menuBarOnly", false)) {
+    native::setStatusItemVisible(true);   // the only way back to the window
+    native::setMenuBarOnly(true);
+  }
   native::enableDropOnMainWindow();
 }
 
@@ -389,6 +393,7 @@ void App::drawPalette() {
   add("Theme editor (colours, VS Code / Base16 import, server accent)", "settings", [this] { pane = Pane::Settings; });
   add("Take the tour", "command", [this] { startTour(); });
   add("Reading mode (toggle: measure, text size, controls on hover)", "command", [this] { toggleReadingMode(); });
+  add("Menu-bar-only mode (toggle: no Dock icon, live from the extra)", "command", [this] { setMenuBarOnly(!settings().extra.value("menuBarOnly", false)); });
   add("What's new in this version", "command", [this] { showWhatsNewSheet(true); });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;

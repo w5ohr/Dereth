@@ -6,6 +6,7 @@
 #import <MetalKit/MetalKit.h>
 
 #include "app.h"
+#include "native.h"
 #include "core/async.h"
 #include "core/common.h"
 #include "core/http.h"
@@ -190,7 +191,7 @@ static void injectChord(ImGuiKey key, bool shift = false) {
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
   (void)sender;
-  return YES;
+  return native::menuBarOnly() ? NO : YES;   // menu-bar-only mode lives on in the extra
 }
 
 - (instancetype)init {
@@ -509,6 +510,7 @@ int runThemeSelfTest();
 int runOnboardingSelfTest();
 int runReadingModeSelfTest();
 int runVirtualizeSelfTest();
+int runMenuBarSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -556,6 +558,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--onboardtest") return runOnboardingSelfTest();
     if (std::string(argv[i]) == "--readingtest") return runReadingModeSelfTest();
     if (std::string(argv[i]) == "--virtualtest") return runVirtualizeSelfTest();
+    if (std::string(argv[i]) == "--menubartest") return runMenuBarSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

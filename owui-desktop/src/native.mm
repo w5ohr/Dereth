@@ -2,6 +2,7 @@
 
 #import <Carbon/Carbon.h>
 #import <Cocoa/Cocoa.h>
+#import <ServiceManagement/ServiceManagement.h>
 #import <CoreServices/CoreServices.h>
 #import <CoreSpotlight/CoreSpotlight.h>
 #import <Quartz/Quartz.h>
@@ -280,8 +281,66 @@ bool captureScreen(bool interactive, std::string* png) {
 
 void showMainWindow() {
   [NSApp activateIgnoringOtherApps:YES];
-  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSWindow* window = NSApp.mainWindow;
+  if (!window) {
+    // After a close in menu-bar-only mode there is no main window; find the
+    // chat window, skipping the offscreen renderer and other helper windows.
+    for (NSWindow* w in NSApp.windows) {
+      if (w.frame.origin.x < -10000 || !w.contentViewController) continue;
+      window = w;
+      break;
+    }
+  }
+  if (!window) window = NSApp.windows.firstObject;
   [window makeKeyAndOrderFront:nil];
+}
+
+static bool gMenuBarOnly = false;
+static id gKeyEquivalentMonitor = nil;
+
+void setMenuBarOnly(bool on) {
+  gMenuBarOnly = on;
+  // An accessory app has no menu bar on screen, and macOS stops routing
+  // Cmd-key equivalents through the main menu; feed them to it by hand.
+  if (!gKeyEquivalentMonitor) {
+    gKeyEquivalentMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+                                                                  handler:^NSEvent*(NSEvent* event) {
+                                                                    if (!gMenuBarOnly) return event;
+                                                                    if (!(event.modifierFlags & NSEventModifierFlagCommand)) return event;
+                                                                    if ([NSApp.mainMenu performKeyEquivalent:event]) return nil;
+                                                                    return event;
+                                                                  }];
+  }
+  // The closed window must survive so the extra can bring it back.
+  for (NSWindow* w in NSApp.windows) w.releasedWhenClosed = NO;
+  [NSApp setActivationPolicy:on ? NSApplicationActivationPolicyAccessory : NSApplicationActivationPolicyRegular];
+  if (on) [NSApp activateIgnoringOtherApps:YES];
+}
+
+bool menuBarOnly() { return gMenuBarOnly; }
+
+bool setLoginItem(bool on, std::string* error) {
+  if (@available(macOS 13.0, *)) {
+    NSError* err = nil;
+    SMAppService* service = [SMAppService mainAppService];
+    const BOOL ok = on ? [service registerAndReturnError:&err] : [service unregisterAndReturnError:&err];
+    if (!ok && error) *error = err ? err.localizedDescription.UTF8String : "unknown error";
+    return ok;
+  }
+  if (error) *error = "needs macOS 13 or later";
+  return false;
+}
+
+int loginItemStatus() {
+  if (@available(macOS 13.0, *)) {
+    switch ([SMAppService mainAppService].status) {
+      case SMAppServiceStatusEnabled: return 1;
+      case SMAppServiceStatusRequiresApproval: return 2;
+      case SMAppServiceStatusNotFound: return 3;
+      default: return 0;
+    }
+  }
+  return 0;
 }
 
 void refreshStatusMenu() {

@@ -1661,3 +1661,28 @@ only when their message does); incremental markdown parsing was not done. Not co
 jump-to-message into a culled region beyond the self-test's reasoning, and chats whose
 message heights change with the window width (re-measured on the first frame they are
 drawn at the new width).
+
+2026-10-25 122 (menu-bar-only mode): `src/core/menubar.*` (Prefs <-> extra["menuBarOnly"]
+/ extra["openAtLogin"], the rules that the extra is required and the app survives its
+last window, SMAppService status words). `src/native.{h,mm}`: `setMenuBarOnly` switches
+the activation policy to Accessory (no Dock icon, no app-switcher entry) and back, keeps
+the window alive across a close (releasedWhenClosed = NO) and installs a local key-event
+monitor that feeds Cmd chords to the main menu, since macOS stops routing key
+equivalents for accessory apps; `setLoginItem` / `loginItemStatus` through SMAppService;
+`showMainWindow` now finds the chat window (skipping the offscreen renderer) and the
+extra's "Show Open WebUI" callback actually calls it (it was a no-op). main.mm keeps the
+app running after the last window closes in this mode. `src/menu_bar_only.cpp`: the two
+switches in Settings > Mac integration ("Show in the menu bar" is forced on and greyed
+while menu-bar-only), the login-item status line, and `setMenuBarOnly` with its toast;
+startup applies the saved mode; palette toggle. `--menubartest` runs 4 offline checks.
+Verified on a scratch server: switching the mode on made the process background-only
+(System Events) with the window still up; closing the window left the process alive with
+no windows; the status item's menu showed Quick Ask / New Chat / Show Open WebUI / Quit,
+and Show Open WebUI brought the window back (after the callback fix); a relaunch came up
+in accessory mode straight away; Cmd+K opened the palette from the composer (after the
+key-equivalent monitor fix) and the palette command switched the mode off again. Not
+covered: "Open at login" - registering a login item is a persistence change on this Mac
+that the test harness refused, so the SMAppService path has only the status read
+exercised ("login item not found" for an unregistered dev build). One pre-existing
+limitation noticed: ImGui-handled chords (e.g. Cmd+Shift+R) do not fire while the native
+composer has keyboard focus, in any mode.

@@ -280,11 +280,15 @@ void App::drawSettingsPane() {
       cfg.save();
     }
     bool menuBar = cfg.extra.value("menuBarExtra", true);
+    const bool menuBarOnly = cfg.extra.value("menuBarOnly", false);
+    widgets::beginDisabled(menuBarOnly);
     if (ImGui::Checkbox("Show in the menu bar", &menuBar)) {
       cfg.extra["menuBarExtra"] = menuBar;
       cfg.save();
       native::setStatusItemVisible(menuBar);
     }
+    widgets::endDisabled(menuBarOnly);
+    drawMenuBarOnlySection(width);
     widgets::dimText("Links: owui://ask?prompt=...  owui://chat/<id>  owui://quick");
     widgets::dimText("Services: select text anywhere > Services > Ask Open WebUI");
     if (ImGui::Button("Clear Spotlight index", ImVec2(200, 0))) {
