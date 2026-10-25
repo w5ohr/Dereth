@@ -254,6 +254,14 @@ Things a browser tab can't do, plus the workflow features built on top:
   chat and sends the steps one after another as each reply finishes, so the
   whole chain is kept. Run from the tab, the palette ("Run recipe: ...") or
   a daily schedule; three example recipes are one click away.
+- **Repo map:** with a project folder pinned, every message carries a
+  compact symbol index of the project - one line per file listing the
+  classes, functions, methods and types it defines with line numbers
+  (ctags-style regexes for Python, JS/TS, C/C++/ObjC, Go, Rust, Swift, Ruby,
+  Java/Kotlin/C#, Markdown headings) - so the model can name the right
+  function or ask for a file instead of guessing from the tree. Capped at
+  ~8k tokens, trimming detail before dropping files; switch and Reindex in
+  the project popover. `Open WebUI --repomaptest` checks the extractors.
 - **Test loop:** Tools ▸ Test loop detects the project's runner (pytest or
   unittest, npm test, ctest, swift test, go test, cargo test, make test),
   runs it, and on failure asks the model for fixes with the failure digest

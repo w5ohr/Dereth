@@ -896,3 +896,28 @@ server with qwen3:8b on the scratch repo (unittest, `shout()` missing `.upper()`
 snippet with no file - a `keepFences` flag now leaves the loop's replies alone. Not
 exercised: the review (auto-apply off) path and runners other than unittest (pytest is
 not installed on this machine).
+
+2026-10-24 V (93 repo map): `src/core/repomap.{h,cpp}` (languageOf; per-language regex
+rules for class / func / method / type / const / export / section, one symbol per line,
+keyword and assignment lines filtered for C-like code; `render` writes one line per file
+- "path: name() L12, class X L3, [ns] L1" - and when over budget first drops methods /
+constants / exports, then caps symbols per file, and only then leaves files out, always
+with a note) and the wiring in `code_tools.cpp` (`buildRepoMap` walks the project on a
+worker, 512 kB per file, up to 3000 files; `repoMapBlock` renders within 32k chars; the
+block goes into `projectContextBlock` after the tree; the project popover has the switch
+extra["projectRepoMap"] (default on), Reindex and a status line "N symbols in M files
+(~Xk tokens sent)"; the map is built when the project folder is known). `--repomaptest`
+runs 11 offline checks. Verified against a scratch server with qwen3:8b and this app's
+own src/ as the project (2538 symbols in 133 files, ~7.2k tokens): "which file defines
+recoverInflight, name three other functions in that file" was answered from the map -
+recovery.cpp with saveInflight, clearInflight, tickRecovery, all correct with line
+numbers in the reasoning - where the earlier verbose renderer (24k chars, whole files
+dropped) had produced invented names. Found on the way: the first two runs on a cold
+model (30 s prompt evaluation) ended with the reasoning complete and the content empty,
+on the server too; the same messages answered correctly both straight to Ollama and
+through the server's REST endpoint, and the third run through the app was fine - so the
+client's socket path lost the text and its save wrote the blank back. A chat:completion
+event whose `content` is "" was treated as a replace and could wipe the stream; it no
+longer does. That is the likely cause, not a confirmed one: the failing event stream was
+not captured. Known: the header's ctx figure does not count the project block (16k in,
+"~47" shown).

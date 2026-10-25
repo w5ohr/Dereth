@@ -442,6 +442,7 @@ int runUsageSelfTest();
 int runImportSelfTest();
 int runRecipeSelfTest();
 int runTestLoopSelfTest();
+int runRepoMapSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -459,6 +460,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--importtest") return runImportSelfTest();
     if (std::string(argv[i]) == "--recipetest") return runRecipeSelfTest();
     if (std::string(argv[i]) == "--testlooptest") return runTestLoopSelfTest();
+    if (std::string(argv[i]) == "--repomaptest") return runRepoMapSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

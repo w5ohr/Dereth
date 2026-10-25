@@ -468,6 +468,13 @@ class App {
   void tickTriggers();
   void drawTriggersSection(float width);
 
+  // --- repo map (code_tools.cpp) --------------------------------------------
+  // A symbol index of the project folder, sent with the project context in
+  // place of whole files (extra["projectRepoMap"], default on).
+  void buildRepoMap();                        // (re)indexes on a worker
+  std::string repoMapBlock() const;           // rendered, or "" when off / not built
+  std::string repoMapStatus;                  // "412 symbols in 38 files (~3.1k tokens)"
+
   // --- test loop (test_loop.cpp) --------------------------------------------
   // Run the project's tests, have the model fix failures, apply, repeat.
   void testLoopDetect();

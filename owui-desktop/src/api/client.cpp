@@ -301,8 +301,10 @@ bool parseSocketEvent(const Json& payload, StreamDelta* out, std::string* messag
     if (data.contains("usage") && data["usage"].is_object()) out->usage = data["usage"];
     if (data.contains("sources")) out->sources = data["sources"];
     if (data.contains("content") && data["content"].is_string()) {
+      // A status-only event carries content "" - never let it wipe what has
+      // streamed in (that blanked replies after a long prompt evaluation).
       out->replaceContent = data["content"].get<std::string>();
-      out->hasReplace = true;
+      out->hasReplace = !out->replaceContent.empty();
     }
     if (data.contains("choices") && data["choices"].is_array() && !data["choices"].empty()) {
       const Json& delta = data["choices"][0].value("delta", Json::object());

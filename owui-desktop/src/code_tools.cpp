@@ -25,6 +25,7 @@
 #include "native.h"
 #include "platform.h"
 #include "core/fileblocks.h"
+#include "core/repomap.h"
 #include "ui/diffview.h"
 #include "ui/highlight.h"
 #include "ui/theme.h"
@@ -641,6 +642,10 @@ void drawApplyModal() {
 // ---------------------------------------------------------- project mode
 
 std::string gTreeFolder;      // folder `projectTree` was listed from
+std::vector<repomap::FileMap> gRepoMap;   // built for gRepoMapFolder
+std::string gRepoMapFolder;
+bool gRepoMapBuilding = false;
+constexpr size_t kRepoMapChars = 32000;   // ~8k tokens at most, in the compact form
 bool gTreeLoading = false;
 bool gProjectLoaded = false;
 std::string gProjectFilter;
@@ -1058,6 +1063,46 @@ void App::setProjectFolder(const std::string& folder) {
   settings().save();
 }
 
+void App::buildRepoMap() {
+  const std::string folder = currentProjectFolder(*this);
+  if (folder.empty() || gRepoMapBuilding) return;
+  gRepoMapBuilding = true;
+  repoMapStatus = "Indexing...";
+  async::run([this, folder] {
+    std::vector<repomap::FileMap> maps;
+    size_t symbols = 0;
+    for (const WalkEntry& entry : walkFolder(folder, 12, 6000)) {
+      if (entry.dir || entry.size > 512 * 1024) continue;
+      const std::string language = repomap::languageOf(entry.rel);
+      if (language.empty()) continue;
+      bool ok = false;
+      const std::string text = core::readFile(folder + "/" + entry.rel, &ok);
+      if (!ok || looksBinary(text)) continue;
+      repomap::FileMap map{entry.rel, language, repomap::extract(language, text)};
+      symbols += map.symbols.size();
+      maps.push_back(map);
+      if (maps.size() >= 3000) break;
+    }
+    const std::string rendered = repomap::render(maps, kRepoMapChars);
+    const size_t files = std::count_if(maps.begin(), maps.end(), [](const repomap::FileMap& m) { return !m.symbols.empty(); });
+    async::post([this, folder, maps, symbols, files, rendered] {
+      gRepoMapBuilding = false;
+      if (folder != currentProjectFolder(*this)) return;
+      gRepoMap = maps;
+      gRepoMapFolder = folder;
+      char buf[128];
+      snprintf(buf, sizeof(buf), "%zu symbols in %zu files (~%.1fk tokens sent)", symbols, files, rendered.size() / 4000.0);
+      repoMapStatus = buf;
+    });
+  });
+}
+
+std::string App::repoMapBlock() const {
+  if (!core::Settings::instance().extra.value("projectRepoMap", true)) return "";
+  if (gRepoMapFolder != currentProjectFolder(*this) || gRepoMap.empty()) return "";
+  return repomap::render(gRepoMap, kRepoMapChars);
+}
+
 std::string App::projectContextBlock() const {
   const std::string folder = currentProjectFolder(*this);
   if (folder.empty()) return "";
@@ -1093,6 +1138,11 @@ std::string App::projectContextBlock() const {
   if (tree.size() >= 400) out += "...\n";
   out += "```\n";
 
+  // The repo map: every symbol the project defines, so the model can name a
+  // function or ask for a file instead of guessing from the tree.
+  const std::string map = repoMapBlock();
+  if (!map.empty()) out += "\n" + map;
+
   size_t budget = kMaxProjectFileBytes;
   for (const std::string& rel : files) {
     bool ok = false;
@@ -1110,6 +1160,10 @@ std::string App::projectContextBlock() const {
 
 void App::drawProjectFilesPopup() {
   // Project folder and ticked files persist in settings; pick them up once.
+  if (gProjectLoaded && !projectFolder.empty() && gRepoMapFolder != projectFolder && !gRepoMapBuilding &&
+      settings().extra.value("projectRepoMap", true)) {
+    buildRepoMap();
+  }
   if (!gProjectLoaded) {
     gProjectLoaded = true;
     const Json& extra = settings().extra;
@@ -1167,6 +1221,19 @@ void App::drawProjectFilesPopup() {
       }
     }
     widgets::dimText("Ticked files are sent in full with every message, after the file tree.");
+    {
+      bool useMap = settings().extra.value("projectRepoMap", true);
+      if (ImGui::Checkbox("Send a repo map (every symbol the project defines, file:line) instead of guessing from the tree", &useMap)) {
+        settings().extra["projectRepoMap"] = useMap;
+        settings().save();
+      }
+      if (useMap && !projectFolder.empty()) {
+        if (gRepoMapFolder != projectFolder && !gRepoMapBuilding) buildRepoMap();
+        ImGui::SameLine();
+        if (widgets::ghostButton(gRepoMapBuilding ? "Indexing..." : "Reindex")) buildRepoMap();
+        if (!repoMapStatus.empty()) widgets::dimText("Repo map: %s", repoMapStatus.c_str());
+      }
+    }
     widgets::searchField("##projfilter", &gProjectFilter, "Filter files");
     ImGui::Text("%d file(s) ticked", static_cast<int>(projectFiles.size()));
     ImGui::Separator();
