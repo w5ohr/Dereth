@@ -2424,3 +2424,21 @@ the sampler path), the detail pass live, Flux live, a remote ComfyUI over the Ta
 name, inpaint at a working size different from the source being pixel-exact against the
 original rather than the resized source, and Open WebUI's own image-edit API (the server
 here has no image engine configured).
+
+2026-10-25 65 (smooth streaming): the auto-scroll that pauses when you scroll up, the
+"New text" pill and the per-chat scroll memory were already built, so this added the token
+fade-in. `core/fade` keeps a per-message `Timeline` of when each rendered character first
+appeared (a shrinking total, such as a regenerate, resets it); `md::Options::glyphAlpha`
+asks it for an alpha per word as markdown draws, with a smoothstep over 0.25 s, and
+`md::lastRenderedChars()` reports how far the draw got. Only streaming messages get a
+timeline; settled ones are erased and draw exactly as before. Settings checkbox "Fade in
+streamed text" (`extra["fadeIn"]`, default on); Reduced motion also disables it.
+`--fadetest` runs 9 checks (first-seen arrivals, undrawn and settled sentinels, the curve's
+ends and midpoint, monotonic alpha, `fading`, a shrink resetting, `forget` trimming).
+Verified in the GUI against a scratch Open WebUI with qwen3:8b: frames 0.2 s apart during a
+150-word reply showed the newest three words in steps from faint to full ("its crust
+crackling" and the next word), the text above at full strength, and the settled reply fully
+opaque; two earlier replies also ended fully opaque. Not covered in the GUI: the checkbox off
+and Reduced motion on (both just skip the timeline), and table cells fading (they share the
+paragraph path, so they should). Code blocks, table header rows and right-to-left paragraphs
+draw through other paths and appear without fading, by design for now.

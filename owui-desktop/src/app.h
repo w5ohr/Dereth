@@ -13,6 +13,7 @@
 
 #include "core/accessibility.h"
 #include "core/crashreport.h"
+#include "core/fade.h"
 #include "core/imagemeta.h"
 #include "core/layouts.h"
 #include "core/logprobs.h"
@@ -848,6 +849,9 @@ class App {
   accessibility::Prefs accessibilityPrefs() const;
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
+
+  // --- smooth streaming fade-in (chat_pane.cpp) -----------------------------
+  std::map<std::string, fade::Timeline> fadeTimelines_;   // per streaming message
 
   // --- image editor (image_editor.mm) ---------------------------------------
   bool showImageEditor = false;

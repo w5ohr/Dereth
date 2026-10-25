@@ -28,7 +28,12 @@ struct Options {
   // Renders a diagram or math block to PNG bytes (mermaid | dot | math) at
   // the given width; runs on a worker. When unset, such blocks stay as code.
   std::function<std::string(const std::string& kind, const std::string& code, float width)> blockImage;
+  // Streaming fade-in: the opacity (0..1) of the text at a drawn-character
+  // index (characters counted in drawing order within one render call).
+  std::function<float(size_t index)> glyphAlpha;
 };
+// Characters drawn by the most recent render() call (for the fade timeline).
+size_t lastRenderedChars();
 
 void render(const char* id, const std::string& text, const Options& options);
 

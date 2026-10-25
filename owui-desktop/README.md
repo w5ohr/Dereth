@@ -900,6 +900,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   edited further, or saved anywhere. Uploads and results use ComfyUI's temp
   folder only. `Open WebUI --imgedittest` covers the workflows, presets,
   mask, sizes and ComfyUI's replies.
+- **Smooth streaming:** words arriving in a streamed reply fade in over a
+  quarter of a second instead of popping in, so the reply reads as it grows.
+  Each message keeps a timeline of when each character first appeared;
+  finished messages draw at full strength with no extra cost. Settings ▸
+  General ▸ "Fade in streamed text" turns it off, and Reduced motion turns it
+  off too. Auto-scroll that stops when you scroll up, the "New text" pill and
+  the per-chat scroll position were already there. `Open WebUI --fadetest`
+  covers the timeline: arrivals, the smoothstep curve, settling, regenerating
+  and forgetting.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

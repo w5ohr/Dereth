@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "core/i18n.h"
 #include "ui/markdown.h"
 
@@ -20,6 +22,8 @@
 
 namespace md {
 namespace {
+
+size_t gDrawn = 0;   // characters drawn so far in the current render() call
 
 struct Style {
   bool bold = false;
@@ -253,11 +257,17 @@ void drawRun(ImDrawList* dl, Layout* layout, const Run& run, const Options& opti
       }
     }
     ImVec2 pos = layout->cursor;
+    ImU32 wordColor = color;
+    if (options.glyphAlpha) {
+      const float a = std::clamp(options.glyphAlpha(gDrawn), 0.0f, 1.0f);
+      wordColor = (color & 0x00FFFFFF) | (static_cast<ImU32>(((color >> 24) & 0xFF) * a) << 24);
+    }
+    gDrawn += word.size();
     if (run.style.code) {
       dl->AddRectFilled(ImVec2(pos.x - 2, pos.y - 1), ImVec2(pos.x + size.x + 2, pos.y + size.y + 1),
                         theme::palette().codeBg, 3.0f);
     }
-    dl->AddText(font, fontSize, pos, color, word.c_str());
+    dl->AddText(font, fontSize, pos, wordColor, word.c_str());
     if (run.style.italic) {
       // stb_truetype has no synthetic oblique; mark italics with a soft underline.
       dl->AddLine(ImVec2(pos.x, pos.y + size.y - 1), ImVec2(pos.x + size.x, pos.y + size.y - 1),
@@ -579,7 +589,10 @@ void renderTable(const std::vector<std::string>& rows, const Options& options, i
 
 }  // namespace
 
+size_t lastRenderedChars() { return gDrawn; }
+
 void render(const char* id, const std::string& text, const Options& options) {
+  gDrawn = 0;
   ImGui::PushID(id);
   const auto& palette = theme::palette();
   std::vector<std::string> lines = core::split(text, '\n');

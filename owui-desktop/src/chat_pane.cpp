@@ -1,6 +1,7 @@
 // The conversation view: header, message list, composer.
 #include <algorithm>
 
+#include "core/fade.h"
 #include "core/i18n.h"
 #include "app.h"
 #include "core/virtualize.h"
@@ -649,8 +650,23 @@ void App::drawChatPane() {
           };
         }
         options.onApplyDiff = [this](const std::string& diff) { applyCodeBlockToFile(diff); };
+        // Smooth streaming: words that just arrived fade in over a quarter second.
+        const bool fadeOn = message.streaming && settings().extra.value("fadeIn", true) && !widgets::reducedMotion();
+        fade::Timeline* timeline = nullptr;
+        if (fadeOn) {
+          timeline = &fadeTimelines_[messageId];
+          const double now = core::nowMillis() / 1000.0;
+          options.glyphAlpha = [timeline, now](size_t index) { return timeline->alpha(index, now, 0.25); };
+        } else if (!fadeTimelines_.empty()) {
+          fadeTimelines_.erase(messageId);
+        }
         if (confidenceShown(message.id) && !message.logprobs.empty()) drawTokenFlow(message, contentWidth);
         else md::render("body", unredact(message.content), options);
+        if (timeline) {
+          const double now = core::nowMillis() / 1000.0;
+          timeline->record(now, md::lastRenderedChars());
+          timeline->forget(now, 2.0);
+        }
       } else {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + contentWidth);
         ImGui::TextUnformatted(unredact(message.content).c_str());

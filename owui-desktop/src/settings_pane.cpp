@@ -116,6 +116,11 @@ void App::drawSettingsPane() {
     ImGui::Checkbox("Ask the server to name new chats", &cfg.autoTitle);
     ImGui::Checkbox("Notify when a reply finishes", &cfg.notifyOnCompletion);
     ImGui::Checkbox("Read replies aloud", &cfg.speakReplies);
+    bool fadeIn = cfg.extra.value("fadeIn", true);
+    if (ImGui::Checkbox("Fade in streamed text (off with Reduced motion)", &fadeIn)) {
+      cfg.extra["fadeIn"] = fadeIn;
+      cfg.save();
+    }
     bool virtualOn = cfg.extra.value("virtualTranscript", true);
     if (ImGui::Checkbox("Lay out only the visible part of long chats (virtualised transcript)", &virtualOn)) {
       cfg.extra["virtualTranscript"] = virtualOn;
