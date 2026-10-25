@@ -26,6 +26,7 @@
 #include "native.h"
 #include "platform.h"
 #include "core/fileblocks.h"
+#include "core/fileeditor.h"
 #include "core/repomap.h"
 #include "ui/diffview.h"
 #include "ui/highlight.h"
@@ -550,7 +551,8 @@ void confirmApply() {
     widgets::toastError("Could not apply " + failure);
   } else {
     gApply.writing = true;
-    async::run([writes] {
+    const std::string editorHistory = core::supportDir() + "/editor-history";
+    async::run([writes, editorHistory] {
       std::string failed;
       std::vector<AppliedFile> done;
       for (const auto& [file, result] : writes) {
@@ -564,6 +566,9 @@ void confirmApply() {
           break;
         }
         done.push_back({file.path, file.created});
+        // The editor's history: the file before and after this apply.
+        if (!file.created) fileeditor::record(editorHistory, file.path, file.before, "before apply");
+        fileeditor::record(editorHistory, file.path, result, "apply");
       }
       if (!failed.empty()) {
         // One transaction: a write that fails puts the earlier files back.
@@ -583,6 +588,7 @@ void confirmApply() {
         gLastApply = done;
         gApply.show = false;
         gApply.diffs.clear();
+        for (const AppliedFile& f : done) App::instance().refreshEditorHistory(f.path);
         widgets::toast(widgets::ToastLevel::Success,
                        count == 1 ? "Wrote " + first + " (backup beside it as .bak)"
                                   : "Wrote " + std::to_string(count) + " files (backups beside them as .bak)");
@@ -607,6 +613,14 @@ void drawApplyModal() {
       widgets::dimText("%zu files, applied together - if one cannot be written, none are changed.", gApply.files.size());
     }
     for (const ApplyFile& file : gApply.files) {
+      ImGui::PushID(file.path.c_str());
+      if (ImGui::SmallButton("Edit")) {   // the file as it is now, in the editor; the dialog closes
+        App::instance().openFileEditor(file.path);
+        gApply.show = false;
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::PopID();
+      ImGui::SameLine();
       ImGui::TextUnformatted((file.path + (file.created ? "  (new file)" : "")).c_str());
       if (!file.error.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.danger));
@@ -848,6 +862,12 @@ void App::recordTestLoopApply(const std::vector<std::string>& relPaths) {
   if (files.empty()) return;
   journalApply(files);
   gLastApply = files;
+}
+
+std::vector<std::string> App::lastAppliedPaths() const {
+  std::vector<std::string> out;
+  for (const AppliedFile& f : gLastApply) out.push_back(f.path);
+  return out;
 }
 
 void App::undoLastApply() {

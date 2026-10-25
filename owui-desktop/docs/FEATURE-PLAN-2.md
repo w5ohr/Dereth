@@ -1828,3 +1828,37 @@ asks (a direct curl of /api/chat/completions confirmed it), so through the serve
 button appears only for OpenAI-style models that return them - not exercised. Not
 covered: OpenAI- and Anthropic-kind direct backends beyond the self-test, and very long
 replies' draw cost (one rectangle and text call per token).
+
+2026-10-25 100 (file editor): `src/core/fileeditor.*` (per-file snapshot history under
+support/editor-history/<fnv-hash>.json: `record` skips a snapshot equal to the newest and
+keeps the newest 30, `loadHistory`, `describe`; `languageFor` from the extension or
+Makefile/Dockerfile; `lineCount`, `lineOf`, `offsetOfLine`, `findNext` with one wrap and a
+caseless mode, `firstDifferingLine`). `src/file_editor.cpp`: an "Editor" window with
+tabs per file (close buttons, " *" when modified), toolbar (Save / Cmd+S, Revert to disk,
+Find / Cmd+F / Enter = next, go-to-line, History toggle, path - lines - modified), a
+48 px line-number gutter driven by the input child's scroll, `InputTextMultiline` with
+its text colour pushed transparent and `paintHighlight` re-entering the input's child
+window (WindowPadding 0, origin = window pos - scroll) to draw `highlight::tokenize`
+spans line by line over it - so the cursor (ImGuiCol_InputTextCursor), selection,
+typing and stb_textedit undo/redo stay native; a history column (newest first, label,
+line count, age, "= the editor's text" or the first differing line with Go to and
+Restore; Restore records "before restore" first). `code_tools.cpp`: `confirmApply`
+records "before apply" and "apply" snapshots per written file and refreshes an open
+tab afterwards, an Edit button before each file's path in the Apply dialog opens it in
+the editor and closes the dialog, `lastAppliedPaths()`; palette: "Open a file in the
+editor...", "Open the last applied file in the editor", "Show the editor window".
+`--fileeditortest` runs 11 offline checks (the self-test was first named --editortest,
+which the editor bridge already owned - renamed). Verified on a scratch home with a
+project folder holding hello.py and a seeded chat whose reply carried
+```python path=hello.py```: the folder icon opened the Apply dialog, "Apply 1 of 1
+change" wrote the file, the palette opened hello.py in the editor with Python
+highlighting aligned to the gutter and the history showing "apply - 12 lines" (= the
+editor's text) and "before apply - 10 lines - first difference at line 5"; Restore put
+the 10-line version in the tab (marked *), typing a comment at the end of line 2 showed
+the cursor and the highlighted text, Cmd+S toasted "Saved hello.py", the file on disk
+carried the comment and the history read 3 snapshots with "saved in the editor" newest;
+reopening the Apply dialog showed Edit before the path (it had been clipped after the
+long path - moved). Not covered: files with tabs or very long lines (the overlay
+measures with the same font, so widths should match), multi-file tabs beyond one file,
+Cmd+Z inside the editor (ImGui's own, not exercised), and a history of more than 30
+snapshots beyond the self-test.

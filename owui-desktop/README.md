@@ -723,6 +723,21 @@ Things a browser tab can't do, plus the workflow features built on top:
   match the text shown. `Open WebUI --logprobtest` covers the parsers, the
   compact storage, confidence, tints, stats, tooltips and the request
   passthrough.
+- **File editor:** a real editor window for the files Apply touches. "Edit"
+  beside each file in the Apply dialog, "Open a file in the editor..." and
+  "Open the last applied file in the editor" from the palette open files in
+  tabs with syntax highlighting (the highlighter painted over a native
+  multiline input, so typing, selection and ImGui's own undo/redo - Cmd+Z /
+  Cmd+Shift+Z - stay intact), a line-number gutter, find (Cmd+F, Enter for
+  the next match), go to line, Save (Cmd+S), Revert to disk and a modified
+  marker on the tab. Every apply records the file before and after it, and
+  every save records it too, in a per-file history (support/editor-history)
+  shown beside the editor: each snapshot with its label, line count and
+  age, the first line where it differs from the editor's text, "Go to" and
+  "Restore" (the current text is snapshotted first), so you can step back
+  across applies, not just the last one. `Open WebUI --fileeditortest`
+  covers the history store, language detection and the line / search
+  helpers.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -846,6 +846,15 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- file editor (file_editor.cpp) ----------------------------------------
+  bool showFileEditor = false;
+  void openFileEditor(const std::string& path, int line = 0);
+  void refreshEditorHistory(const std::string& path);   // after an apply wrote the file
+  std::vector<std::string> openEditorPaths() const;
+  void drawFileEditor();
+  void drawFileEditorMenuEntry();
+  std::vector<std::string> lastAppliedPaths() const;    // code_tools.cpp
+
   // --- logprob view (logprob_view.cpp) --------------------------------------
   logprobs::Prefs logprobPrefs() const;
   void applyLogprobRequest(Json& fields);          // logprobs + top_logprobs when enabled

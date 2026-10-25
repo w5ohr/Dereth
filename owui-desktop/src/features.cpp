@@ -430,6 +430,16 @@ void App::drawPalette() {
   });
   add("Direct backends (Ollama, OpenAI-compatible, Anthropic)", "settings", [this] { pane = Pane::Settings; });
   add("Undo the last apply to files", "command", [this] { undoLastApply(); });
+  add("Open a file in the editor...", "command", [this] {
+    const std::vector<std::string> picked = platform::openFiles(false);
+    if (!picked.empty()) openFileEditor(picked.front());
+  });
+  add("Open the last applied file in the editor", "command", [this] {
+    const std::vector<std::string> paths = lastAppliedPaths();
+    if (paths.empty()) widgets::toastInfo("Nothing applied in this session yet");
+    for (const std::string& p : paths) openFileEditor(p);
+  });
+  add("Show the editor window", "command", [this] { showFileEditor = true; });
   add("Compare models", "command", [this] { openModelCompare(); });
   add("Usage dashboard (Tools > Usage)", "command", [this] { pane = Pane::Tools; });
   add("Export everything to a backup zip", "command", [this] { exportEverything(); });
