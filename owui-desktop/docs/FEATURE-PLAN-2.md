@@ -2083,3 +2083,43 @@ reinterpret_cast of a shared_ptr - replaced by a shared_ptr held everywhere. Not
 covered: figures (matplotlib is not installed here; the self-test checks the protocol
 path only), Import / Export through the file dialogs, Interrupt from the button (the
 self-test interrupts the same way), and input() (unsupported: stdin is the protocol).
+
+2026-10-25 67 (text rendering: emoji, wide characters): root cause found first - ImGui was
+built with 16-bit ImWchar, so every codepoint above U+FFFF (all emoji, the mathematical
+alphanumerics) became U+FFFD before any font was asked; the target now defines
+IMGUI_USE_WCHAR32 (all sources recompiled; 11 other UI self-tests re-run and passing).
+`src/ui/emoji_font.{h,mm}`: an ImFontLoader backed by Core Text (CTFont
+"AppleColorEmoji"): codepoint -> glyph via CTFontGetGlyphsForCharacters with UTF-16
+surrogates; one CTFont per baked size x rasterizer density (FontBakedSrcLoaderDataSize);
+glyphs drawn with CTFontDrawGlyphs into an RGBA CGBitmapContext, un-premultiplied,
+packed with ImFontAtlasPackAddRect and stored with ImFontAtlasBakedSetFontGlyphBitmap
+as RGBA32 with Colored = true (so the text tint doesn't grey them); sized at 0.8x the
+text size and centred in the line box (Apple Color Emoji glyphs are ~1.3x their point
+size). Two sources per face (FontLoaderFlags bit): an early one merged right after the
+text font that claims only Emoji_Presentation=Yes characters (the astral emoji blocks
+minus text-default ones, and the BMP list: watch, hourglass, umbrella, coffee, zodiac,
+check mark, star, ... plus U+2763-2764, which chat always writes with U+FE0F), and a
+late last-resort one for any emoji-ish codepoint no text font had. Zero-width: U+200D,
+U+FE00-FE0F, tags, U+20E3, the variation-selector supplement and the skin-tone
+modifiers (no sequence shaping in ImGui's one-codepoint layout, so the base emoji
+shows); regional indicators are drawn as their bold capital letter, tinted like text
+(a flag reads "GB"). theme.cpp merge order per face: text font, early emoji, Arial
+Unicode (CJK, arrows, box drawing), STIX Two Math (maths alphanumerics), late emoji;
+CoreText linked. `--emojitest` (an .mm) builds a headless atlas through theme::loadFonts
+and checks 17 things: 32-bit ImWchar, the range helpers, 'A' monochrome from the text
+face, the rocket coloured with real colour pixels, U+2705 and U+2B50 from emoji while
+U+26A0 stays text, the heart coloured, G as a letter, the skin tone zero-width, CJK from
+the fallback, U+1D465 from STIX, VS16 and ZWJ zero-width, emoji inside the line box,
+and CalcTextSize counting the emoji but not the selector. Verified on a scratch home
+with a seeded chat of emoji, CJK, Korean, maths and an emoji in a code block: the
+installed build (16-bit) showed every emoji and maths letter as a `?` box and
+`print("done ?")` in the code block; the new build drew the title and sidebar emoji,
+the checklist (rocket, bug, red heart, thumbs up, GB, the family's three faces, star,
+hourglass, coffee), ⚠ as text, 你好 / こんにちは / 안녕하세요, 𝑥² + 𝑦² = 𝑟² and 𝔽, emoji in
+bold, inline code and the code block. Two refinements came from that comparison:
+⭐ ⏳ ☕ first came out as monochrome text glyphs (Arial Unicode has them) - fixed with
+the early presentation-only source - and 👍🏽 showed a separate brown swatch and 🇬🇧 two
+blank boxes - fixed by dropping modifiers and drawing indicator letters. Not covered:
+real sequence shaping (ZWJ families, flags, keycaps, skin tones would need a shaper
+such as Core Text line layout), FreeType (not installed; Core Text does the colour
+work and stb the rest), and Retina density beyond what ImGui already does.

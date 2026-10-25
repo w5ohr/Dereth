@@ -53,6 +53,7 @@ target_include_directories(OpenWebUI PRIVATE
 target_compile_definitions(OpenWebUI PRIVATE
   IMGUI_DEFINE_MATH_OPERATORS
   IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+  IMGUI_USE_WCHAR32   # emoji and maths alphanumerics live above U+FFFF
 )
 
 find_library(COCOA Cocoa REQUIRED)
@@ -75,8 +76,10 @@ find_library(WEBKIT WebKit REQUIRED)
 find_library(JAVASCRIPTCORE JavaScriptCore REQUIRED)
 find_library(IOKIT IOKit REQUIRED)
 find_library(SERVICEMANAGEMENT ServiceManagement REQUIRED)
+find_library(CORETEXT CoreText REQUIRED)
 
 target_link_libraries(OpenWebUI PRIVATE
+  ${CORETEXT}
   ${COCOA} ${METAL} ${METALKIT} ${QUARTZCORE} ${GAMECONTROLLER}
   ${SECURITY} ${UTTYPE} ${AVFOUNDATION} ${COREAUDIO} ${AUDIOTOOLBOX}
   ${USERNOTIFICATIONS} ${CARBON} ${CORESPOTLIGHT} ${QUARTZ} ${VISION} ${CORESERVICES} ${WEBKIT} ${JAVASCRIPTCORE} ${IOKIT} ${SERVICEMANAGEMENT}

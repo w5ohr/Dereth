@@ -812,6 +812,18 @@ Things a browser tab can't do, plus the workflow features built on top:
   import / export as files Jupyter reads; prompt cells export as readable
   markdown with the prompt and answer kept in metadata. `Open WebUI
   --notebooktest` covers the format, the context and a live kernel.
+- **Emoji and wide characters:** text is decoded as full 32-bit Unicode, so
+  emoji and mathematical alphanumerics (𝑥, 𝔽) no longer collapse to `?`
+  boxes. Colour emoji are drawn by Core Text from Apple Color Emoji into the
+  font atlas as coloured glyphs, in every face (chat, bold, code, titles);
+  characters Unicode shows as emoji by default (✅ ⭐ ☕ ⏳ and the heart)
+  prefer the emoji font, text-default symbols (⚠ ✔ →) stay monochrome, CJK
+  comes from Arial Unicode and maths letters from STIX Two Math. Layout is
+  one codepoint at a time, so sequences are approximated: variation
+  selectors and joiners take no space, skin-tone modifiers are dropped (the
+  base emoji shows), a family shows its members side by side and a flag
+  shows its two letters (GB). `Open WebUI --emojitest` builds a real atlas
+  and checks which font each character comes from and its colour.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

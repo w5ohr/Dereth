@@ -1,3 +1,6 @@
+#include <unistd.h>
+
+#include "ui/emoji_font.h"
 #include "ui/theme.h"
 
 #include <vector>
@@ -85,16 +88,27 @@ void loadFonts(float baseSize) {
     uiBold.insert(uiBold.begin(), {gFontOverrideBold.empty() ? gFontOverride.c_str() : gFontOverrideBold.c_str(), 0});
   }
 
-  // A wide-coverage fallback is merged into each face so arrows, maths and box
-  // characters in model output render instead of showing a missing-glyph box.
-  // Colour emoji (sbix) is not supported by the stb rasteriser.
+  // Fallbacks merged into each face, in order: Arial Unicode for arrows,
+  // maths, box drawing and CJK; STIX Two Math for the mathematical
+  // alphanumerics above U+FFFF; then colour emoji, rasterised by Core Text
+  // (the stb rasteriser can't draw Apple Color Emoji's sbix bitmaps).
   const char* kFallback = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf";
+  const char* kMath = "/System/Library/Fonts/Supplemental/STIXTwoMath.otf";
   auto mergeFallback = [&] {
+    emoji::merge(baseSize, true);   // default-emoji characters (✅ ⭐ ☕ ⏳ ...) before the text fallbacks claim them
     ImFontConfig config;
     config.MergeMode = true;
     config.OversampleH = 2;
     config.OversampleV = 2;
     io.Fonts->AddFontFromFileTTF(kFallback, baseSize, &config);
+    if (access(kMath, R_OK) == 0) {
+      ImFontConfig math;
+      math.MergeMode = true;
+      math.OversampleH = 2;
+      math.OversampleV = 2;
+      io.Fonts->AddFontFromFileTTF(kMath, baseSize, &math);
+    }
+    emoji::merge(baseSize, false);   // anything emoji-like no text font had
   };
 
   fonts.regular = loadFirst(uiRegular, baseSize);
