@@ -178,6 +178,8 @@ void App::syncMirror(bool force) {
                        std::to_string(pushed) + " offline edit" + (pushed == 1 ? "" : "s") + " synced");
         refreshChats();
       }
+      // The vault follows the local copy.
+      if (!core::trim(settings().extra.value("vaultFolder", std::string())).empty()) syncVault(false);
     });
   });
 }

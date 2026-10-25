@@ -1149,3 +1149,32 @@ passthrough (the known flaky passthrough path, not this feature) - the verified 
 MCP tools off; Edit, Skip all, the dedupe against existing memories with a live list, and
 the palette command were not exercised in the GUI.
 
+2026-10-25 VIII (127 Obsidian / vault sync): `src/core/vault.{h,cpp}` (app-free: safeName
+for file stems, chatFileName "<title> (<id8>).md", chatMarkdown = YAML front matter (id,
+title, created, updated, models, tags, type, source link) + the current branch walked
+from currentId with "## You" / "## <model>" sections, noteFileName / noteMarkdown with
+id + title + updated front matter, parseNoteFile reading a file back (a file without
+front matter is a new note titled after the file name), readFrontMatter with quoted
+values and CRLF; note timestamps normalised from Open WebUI's nanoseconds). `src/vault_sync.cpp`:
+extra["vaultFolder"] / vaultChats / vaultNotes; syncVault on a worker writes changed chats
+from the local mirror (state in <root>/.owui-vault.json remembers file + updated_at per
+id, renames drop the old file, chats gone from the server lose their file) and syncs
+notes both ways against /api/v1/notes (server newer -> rewrite the file; file mtime newer
+than the recorded one -> parse and updateNote; both -> server wins and the local text is
+kept as "<title> (conflict <time>).md"; a new .md without a known id -> createNote and the
+file is rewritten with front matter; notes deleted on the server lose their file);
+tickVaultSync watches <root>/Notes with FSEvents (2 s debounce), runs a first pass ~45 s
+after launch and every ten minutes, and syncMirror's post handler runs it after every
+chat sync; card under Settings > Vault sync (folder field + Choose... + Reveal, the two
+checkboxes, status, Sync now / Rewrite everything); palette "Sync the vault now".
+`--vaulttest` runs 10 offline checks (a null parentId on the root message crashed the
+first run - value() throws on a present-but-null key - fixed with a null-safe getter).
+Verified on a scratch server with two seeded chats and one note, the vault folder set in
+settings: 30 s after launch Chats/ held both files with correct front matter and
+transcripts and Notes/ the note; appending a line to "Boat maintenance.md" and dropping a
+new "Newsletter ideas.md" (no front matter) were picked up by the watcher within ~12 s -
+the server note gained the line and a new server note "Newsletter ideas" appeared, whose
+file was rewritten with id/title/updated front matter; the Settings card rendered. Not
+covered: the conflict path, a note deleted on the server, a chat renamed after export,
+Choose... (a system dialog), and a real Obsidian vault (any folder behaves the same).
+

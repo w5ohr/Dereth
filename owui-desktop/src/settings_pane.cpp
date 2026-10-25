@@ -104,6 +104,10 @@ void App::drawSettingsPane() {
   drawMirrorSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("VAULT SYNC (OBSIDIAN)");
+  drawVaultSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("VOICE");
   card("voice", [&] {
     if (!gVoicesLoaded) {

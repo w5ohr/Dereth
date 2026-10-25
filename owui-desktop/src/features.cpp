@@ -345,6 +345,14 @@ void App::drawPalette() {
     memoryProposals.erase(last);
     maybeProposeMemories(last);
   });
+  add("Sync the vault now (Obsidian)", "command", [this] {
+    if (core::trim(settings().extra.value("vaultFolder", std::string())).empty()) {
+      widgets::toastInfo("Choose a vault folder under Settings > Vault sync first");
+      pane = Pane::Settings;
+      return;
+    }
+    syncVault(false);
+  });
   add("Search chats by meaning", "command", [this] {
     chatSearchSemantic = true;
     sidebarVisible = true;

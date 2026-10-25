@@ -440,6 +440,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   already in Memories is left out. Off under Settings ▸ Chat; "Propose
   memories from this reply" in the palette asks on demand. Private chats are
   never scanned. `Open WebUI --memorytest` covers the parsing and filtering.
+- **Vault sync (Obsidian):** Settings ▸ Vault sync points at a folder,
+  typically inside an Obsidian vault. Every chat in the local copy is
+  written to `Chats/<title> (<id>).md` with YAML front matter (id, title,
+  created, updated, models, tags, a link back to the server) and the current
+  branch as Markdown, refreshed after each chat sync. Notes go both ways:
+  `Notes/<title>.md` is written from the server, an edit made in Obsidian is
+  sent back within seconds (a folder watch), a new `.md` dropped into Notes
+  becomes a note, and when both sides changed the server's text wins while
+  your edit is kept as a "(conflict ...)" copy. Private chats are never
+  written. `Open WebUI --vaulttest` covers the file formats.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

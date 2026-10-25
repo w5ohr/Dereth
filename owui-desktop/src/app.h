@@ -425,6 +425,13 @@ class App {
   void acceptMemoryProposal(const std::string& assistantId, size_t index, const std::string& text);
   void skipMemoryProposal(const std::string& assistantId, size_t index);
   void drawMemoryProposals(const std::string& assistantId);
+
+  // --- vault sync (vault_sync.cpp) ------------------------------------------
+  // Chats and notes as Markdown in a folder (an Obsidian vault); notes both ways.
+  void tickVaultSync();
+  void syncVault(bool force);
+  void drawVaultSection(float width);
+  std::string vaultStatus;
   std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
   void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
   void mcpImportConfig(const std::string& path);
