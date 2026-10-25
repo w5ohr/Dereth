@@ -358,6 +358,12 @@ class App {
   // Fills `chats` from the mirror when the server can't be reached.
   void loadChatsFromMirror(bool archived);
 
+  // --- document column (document.cpp) ---------------------------------------
+  // Shows the PDF behind a citation beside the chat with the cited passage
+  // highlighted. `page` is 1-based (0 = unknown).
+  void openDocument(const std::string& fileId, const std::string& name, int page, const std::string& passage);
+  void drawDocumentColumn(float width);
+
   // --- sampling panel (sampling.cpp) ----------------------------------------
   void drawSamplingPanel();              // the "##chatparams" popup body
   bool hasSamplingParams() const;        // anything set besides the system prompt
@@ -481,6 +487,16 @@ class App {
   bool mcpEnabled = false;                    // composer toggle, persisted as extra["mcpEnabled"]
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
   float composerTextHeight = 46.0f;           // text area height the composer used last frame
+  bool showDocument = false;
+  bool documentShownThisFrame = false;
+  bool documentLoading = false;
+  std::string documentFileId;
+  std::string documentName;
+  std::string documentPath;                   // cached copy on disk, for "Open in Preview"
+  std::string documentError;
+  std::string documentPassage;
+  int documentPage = 0;                       // page the citation named (1-based), 0 = unknown
+  int documentFoundPage = 0;                  // where the passage was actually found
   std::vector<std::string> fanoutModels;      // persisted as extra["fanoutModels"]
   bool showFanoutPicker = false;
   // Terminal pane state. Selection endpoints are absolute line numbers

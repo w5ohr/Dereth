@@ -341,6 +341,29 @@ sequences one per line; quick presets Precise / Balanced / Creative / Determinis
 (temperature 0 + seed 42); "Save as preset" feeds the existing presets; changes save the
 chat as they are made. The gear in the header is tinted when anything besides the system
 prompt is set. The tool loop's `ollamaOptionsFromParams` already maps these keys for
-MCP turns. Verified in the GUI: the panel opened and rendered every control (status
-below). Not driven: a send with the knobs set (the params ride in the completion
-payload exactly as before this change).
+MCP turns. Verified in the GUI: the panel opened and rendered every control. Not
+driven: a send with the knobs set (the params ride in the completion payload exactly
+as before this change).
+
+2026-10-24 K (101 PDF viewer with anchored citations): `native::pdf*` in `src/native.mm`
+(a PDFView floated over the column like the composer and artifact views; load from
+bytes, page count/current/goto, `pdfHighlight` finds the cited passage with
+`PDFDocument findString:` trying the leading 60/40/28/20/14/10/7/5/4 words of the
+whitespace-collapsed chunk, preferring a hit on the cited page, adds a highlight
+annotation and scrolls to it) and `src/document.cpp` (560 pt column: file name, page
+pager, "Find passage again", "Excerpt" (the old popup), "Open in Preview"; downloads
+`/api/v1/files/{id}/content` once into supportDir()/cache/doc-<id>.pdf). Hook:
+`openCitation` routes sources whose name or content_type says PDF to the column
+(server page numbers are 0-based, +1), everything else keeps the popup; the column
+takes precedence after artifacts. Verified against a scratch server: a generated
+three-page PDF uploaded through the API, a RAG completion run with it (the answer
+cited "[1]" with `file_id`, `content_type: application/pdf`), clicking "1.
+poodle-handbook.pdf" under Sources opened the column at page 1/3 with the cited
+passage highlighted; a second, precomposed page-2 citation opened at page 2/3 with the
+whole three-line passage highlighted. Fixed on the way: `scrollSelectionToVisible:`
+right after assigning a document landed on the last page (layout not done) -
+`layoutDocumentView` + `goToRect:onPage:` instead; and `findString:` never matches
+across a line break, so after the first hit the following words are searched from
+that selection and unioned while they stay nearby on the page. Not exercised: a PDF
+whose extraction disagrees with PDFKit's beyond the first words (falls back to the
+cited page), "Open in Preview".

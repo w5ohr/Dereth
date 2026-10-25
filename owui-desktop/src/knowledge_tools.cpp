@@ -1170,6 +1170,29 @@ void App::openCitation(const Json& source, int chunkIndex) {
   citationChunk = chunkIndex;
   showCitation = true;
   gCiteShowFile = false;
+
+  // A PDF source opens in the document column with the passage highlighted
+  // instead of the excerpt popup (the column's "Excerpt" button brings that back).
+  const Json& src = source.is_object() && source.contains("source") ? source["source"] : source;
+  const Json& documents = source.is_object() && source.contains("document") ? source["document"] : Json();
+  const Json& metadata = source.is_object() && source.contains("metadata") ? source["metadata"] : Json();
+  const Json& meta = jsonAt(metadata, chunkIndex);
+  const Json& doc = jsonAt(documents, chunkIndex);
+  std::string fileId = jsonString(meta, "file_id");
+  if (fileId.empty() && jsonString(src, "type") == "file") fileId = jsonString(src, "id");
+  std::string name = jsonString(src, "name");
+  if (name.empty()) name = jsonString(meta, "name");
+  if (name.empty()) name = jsonString(meta, "source");
+  const std::string lowerName = core::lower(name);
+  const bool pdf = core::endsWith(lowerName, ".pdf") || core::endsWith(core::lower(jsonString(meta, "source")), ".pdf") ||
+                   jsonString(meta, "content_type") == "application/pdf";
+  if (fileId.empty() || !pdf) return;
+  int page = 0;
+  if (meta.is_object() && meta.contains("page") && meta["page"].is_number_integer()) {
+    page = meta["page"].get<int>() + 1;   // the server's page numbers are 0-based
+  }
+  showCitation = false;
+  openDocument(fileId, name, page, doc.is_string() ? doc.get<std::string>() : "");
 }
 
 void App::drawCitationPopup() {

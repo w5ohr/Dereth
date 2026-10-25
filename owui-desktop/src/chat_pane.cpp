@@ -269,6 +269,7 @@ void App::drawChatPane() {
                               (attachments.empty() ? 0.0f : 74.0f) +
                               (projectFolder.empty() ? 0.0f : 24.0f);
   const float sideWidth = showArtifacts ? 540.0f
+                          : showDocument ? 560.0f
                           : !referenceChatId.empty() ? 420.0f
                           : (showPins ? 260.0f : 0.0f);
   ImGui::BeginChild("##messagearea", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
@@ -670,6 +671,9 @@ void App::drawChatPane() {
   if (showArtifacts) {
     ImGui::SameLine();
     drawArtifactColumn(sideWidth);
+  } else if (showDocument) {
+    ImGui::SameLine();
+    drawDocumentColumn(sideWidth);
   } else if (!referenceChatId.empty()) {
     ImGui::SameLine();
     drawReferenceColumn(sideWidth);

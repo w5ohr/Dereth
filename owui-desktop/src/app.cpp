@@ -1304,6 +1304,8 @@ void App::frame() {
     composerShownThisFrame = false;
     native::artifactSetVisible(artifactShownThisFrame && !overlay);
     artifactShownThisFrame = false;
+    native::pdfSetVisible(documentShownThisFrame && !overlay);
+    documentShownThisFrame = false;
   }
 
   // Native hooks need the window to exist, so they go in on the first frame

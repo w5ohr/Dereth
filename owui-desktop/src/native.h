@@ -115,4 +115,19 @@ void artifactLoad(const std::string& html);     // replaces the document, clears
 void artifactReload();
 std::vector<std::string> artifactConsole();     // messages since the last load, oldest first
 
+// Document pane: a PDFKit view floated over the ImGui document column, used
+// to show the PDF behind a citation with the cited passage highlighted.
+void pdfInstall();
+void pdfSetFrame(float x, float y, float width, float height);
+void pdfSetVisible(bool visible);
+bool pdfLoad(const std::string& bytes);         // false when PDFKit can't parse it
+int pdfPageCount();
+int pdfCurrentPage();                           // 1-based
+void pdfGoToPage(int page);                     // 1-based
+// Finds `passage` (whitespace-insensitive, shortening from the front until
+// something matches), highlights it and scrolls to it. Returns the page it
+// was found on, or 0.
+int pdfHighlight(const std::string& passage, int preferredPage);
+void pdfClearHighlights();
+
 }  // namespace native

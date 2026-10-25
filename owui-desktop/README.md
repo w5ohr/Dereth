@@ -161,6 +161,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Document column:** click a citation that points at a PDF and the file
+  opens in a PDFKit view beside the chat, scrolled to the cited page with the
+  passage highlighted (the server's and PDFKit's text extractions differ, so
+  the match shortens the passage from the front until it finds it). Page
+  controls, "Find passage again", the excerpt popup and "Open in Preview";
+  files are cached under the app's cache folder.
 - **Sampling panel:** the gear in the chat header sets this chat's generation
   parameters - temperature, top-p, top-k, min-p, repeat penalty, max tokens,
   context size (with the model's reported window), a lockable seed with

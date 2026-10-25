@@ -9,6 +9,7 @@
 #import <Vision/Vision.h>
 #import <WebKit/WebKit.h>
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 
@@ -860,6 +861,174 @@ void artifactReload() {
 std::vector<std::string> artifactConsole() {
   std::lock_guard<std::mutex> lock(gArtifactMutex);
   return gArtifactConsole;
+}
+
+}  // namespace native
+
+// ---------------------------------------------------------------- pdf pane
+
+namespace native {
+namespace {
+PDFView* gPdfView = nil;
+NSRect gPdfFrame = NSZeroRect;
+NSMutableArray<PDFAnnotation*>* gPdfHighlights = nil;
+
+NSString* collapseWhitespace(NSString* text) {
+  NSArray* parts = [text componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  NSMutableArray* words = [NSMutableArray array];
+  for (NSString* w in parts) {
+    if (w.length) [words addObject:w];
+  }
+  return [words componentsJoinedByString:@" "];
+}
+}  // namespace
+
+void pdfInstall() {
+  if (gPdfView) return;
+  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  if (!window) return;
+  PDFView* view = [[PDFView alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)];
+  view.autoScales = YES;
+  view.displayMode = kPDFDisplaySinglePageContinuous;
+  view.displaysPageBreaks = YES;
+  view.hidden = YES;
+  [window.contentView addSubview:view positioned:NSWindowAbove relativeTo:nil];
+  gPdfView = view;
+  gPdfHighlights = [NSMutableArray array];
+}
+
+void pdfSetFrame(float x, float y, float width, float height) {
+  if (!gPdfView) return;
+  NSView* host = gPdfView.superview;
+  const NSRect frame = NSMakeRect(x, host.bounds.size.height - y - height, width, height);
+  if (NSEqualRects(frame, gPdfFrame)) return;
+  gPdfFrame = frame;
+  gPdfView.frame = frame;
+}
+
+void pdfSetVisible(bool visible) {
+  if (!gPdfView || gPdfView.hidden == !visible) return;
+  if (!visible && gPdfView.window.firstResponder && [gPdfView.window.firstResponder isKindOfClass:[NSView class]] &&
+      [(NSView*)gPdfView.window.firstResponder isDescendantOf:gPdfView]) {
+    [gPdfView.window makeFirstResponder:gPdfView.window.contentView];
+  }
+  gPdfView.hidden = !visible;
+}
+
+bool pdfLoad(const std::string& bytes) {
+  if (!gPdfView) return false;
+  NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+  PDFDocument* document = [[PDFDocument alloc] initWithData:data];
+  if (!document) return false;
+  [gPdfHighlights removeAllObjects];
+  gPdfView.document = document;
+  return true;
+}
+
+int pdfPageCount() { return gPdfView && gPdfView.document ? static_cast<int>(gPdfView.document.pageCount) : 0; }
+
+int pdfCurrentPage() {
+  if (!gPdfView || !gPdfView.document || !gPdfView.currentPage) return 0;
+  return static_cast<int>([gPdfView.document indexForPage:gPdfView.currentPage]) + 1;
+}
+
+void pdfGoToPage(int page) {
+  if (!gPdfView || !gPdfView.document) return;
+  const NSInteger index = std::clamp<NSInteger>(page - 1, 0, static_cast<NSInteger>(gPdfView.document.pageCount) - 1);
+  PDFPage* target = [gPdfView.document pageAtIndex:static_cast<NSUInteger>(index)];
+  if (target) [gPdfView goToPage:target];
+}
+
+void pdfClearHighlights() {
+  for (PDFAnnotation* annotation in gPdfHighlights) [annotation.page removeAnnotation:annotation];
+  [gPdfHighlights removeAllObjects];
+}
+
+int pdfHighlight(const std::string& passage, int preferredPage) {
+  if (!gPdfView || !gPdfView.document) return 0;
+  pdfClearHighlights();
+  PDFDocument* document = gPdfView.document;
+  NSString* text = collapseWhitespace([NSString stringWithUTF8String:passage.c_str()]);
+  NSArray<NSString*>* words = [text componentsSeparatedByString:@" "];
+
+  // The server's text extraction and PDFKit's rarely agree on every
+  // character, so search for a run of leading words, shortening it until it
+  // matches; prefer a hit on the page the citation names.
+  // Longest first so the whole chunk lights up when the texts agree.
+  PDFSelection* found = nil;
+  const NSUInteger lengths[] = {60, 40, 28, 20, 14, 10, 7, 5, 4};
+  for (NSUInteger length : lengths) {
+    if (found) break;
+    const NSUInteger count = MIN(length, words.count);
+    if (count < 4) break;
+    NSString* needle = [[words subarrayWithRange:NSMakeRange(0, count)] componentsJoinedByString:@" "];
+    if (needle.length < 12) break;
+    NSArray<PDFSelection*>* hits = [document findString:needle withOptions:NSCaseInsensitiveSearch];
+    if (hits.count == 0) continue;
+    found = hits.firstObject;
+    if (preferredPage > 0) {
+      for (PDFSelection* hit : hits) {
+        PDFPage* page = hit.pages.firstObject;
+        if (page && [document indexForPage:page] + 1 == static_cast<NSUInteger>(preferredPage)) {
+          found = hit;
+          break;
+        }
+      }
+    }
+  }
+  if (!found) {
+    if (preferredPage > 0) pdfGoToPage(preferredPage);
+    return 0;
+  }
+  // findString: won't match across a line break, so the hit covers at most
+  // one line. Keep searching for the following words from the hit onwards and
+  // union the pieces while they stay on the same page and close by.
+  {
+    PDFPage* page = found.pages.firstObject;
+    NSUInteger consumed = 0;
+    NSString* foundText = collapseWhitespace(found.string);
+    consumed = [foundText componentsSeparatedByString:@" "].count;
+    PDFSelection* cursor = found;
+    int misses = 0;
+    while (consumed + 3 <= words.count && misses < 2) {
+      const NSUInteger take = MIN((NSUInteger)6, words.count - consumed);
+      NSString* needle = [[words subarrayWithRange:NSMakeRange(consumed, take)] componentsJoinedByString:@" "];
+      PDFSelection* next = [document findString:needle fromSelection:cursor withOptions:NSCaseInsensitiveSearch];
+      if (!next || next.pages.firstObject != page) {
+        ++misses;
+        consumed += take;   // skip a run the extractions disagree on and try the next
+        continue;
+      }
+      const NSRect a = [cursor boundsForPage:page];
+      const NSRect b = [next boundsForPage:page];
+      if (fabs(NSMinY(b) - NSMinY(a)) > 120.0) break;   // jumped elsewhere on the page
+      [found addSelection:next];
+      cursor = next;
+      consumed += take;
+      misses = 0;
+    }
+  }
+  for (PDFPage* page in found.pages) {
+    for (NSValue* rectValue in @[ [NSValue valueWithRect:[found boundsForPage:page]] ]) {
+      PDFAnnotation* highlight = [[PDFAnnotation alloc] initWithBounds:rectValue.rectValue
+                                                               forType:PDFAnnotationSubtypeHighlight
+                                                        withProperties:nil];
+      highlight.color = [NSColor colorWithSRGBRed:1.0 green:0.85 blue:0.2 alpha:0.9];
+      [page addAnnotation:highlight];
+      [gPdfHighlights addObject:highlight];
+    }
+  }
+  // A document assigned moments ago may not be laid out yet, in which case
+  // scrollSelectionToVisible lands anywhere; lay it out and go to the rect.
+  [gPdfView layoutDocumentView];
+  [gPdfView setCurrentSelection:found animate:NO];
+  PDFPage* page = found.pages.firstObject;
+  if (page) {
+    NSRect bounds = [found boundsForPage:page];
+    bounds = NSInsetRect(bounds, 0, -80);   // some context above and below
+    [gPdfView goToRect:bounds onPage:page];
+  }
+  return page ? static_cast<int>([document indexForPage:page]) + 1 : 0;
 }
 
 }  // namespace native
