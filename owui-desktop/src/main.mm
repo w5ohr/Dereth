@@ -449,6 +449,7 @@ int runDocTextSelfTest();
 int runBrowserSelfTest();
 int runScriptToolsSelfTest();
 int runChatIndexSelfTest();
+int runMemoryPropSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -473,6 +474,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--browsertest") return runBrowserSelfTest();
     if (std::string(argv[i]) == "--scripttest") return runScriptToolsSelfTest();
     if (std::string(argv[i]) == "--chatindextest") return runChatIndexSelfTest();
+    if (std::string(argv[i]) == "--memorytest") return runMemoryPropSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

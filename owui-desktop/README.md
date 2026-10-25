@@ -432,6 +432,14 @@ Things a browser tab can't do, plus the workflow features built on top:
   the chat on that message (switching branch if needed). Tools ▸ Local index
   shows the index, with Index now / Rebuild / Clear. Private chats stay out.
   `Open WebUI --chatindextest` covers the index with a fake embedder.
+- **Memory proposals:** after a server reply the same model is asked, quietly,
+  for durable facts you stated in that turn - preferences, work, projects,
+  constraints. Up to three appear in a "Remember this?" card under the reply
+  with Save / Edit / Skip; only Save sends anything to your Memories, skipped
+  texts are remembered locally so they are not proposed again, and anything
+  already in Memories is left out. Off under Settings ▸ Chat; "Propose
+  memories from this reply" in the palette asks on demand. Private chats are
+  never scanned. `Open WebUI --memorytest` covers the parsing and filtering.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

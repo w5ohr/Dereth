@@ -1124,3 +1124,28 @@ edited after indexing (the incremental path is self-test only), the Rebuild / Cl
 buttons, and the branch switch for a hit off the current branch (self-test does not
 cover focusMessageInChat).
 
+2026-10-25 VI (107 memory proposals): `src/core/memoryprop.{h,cpp}` (app-free: the system
+prompt asking for 0-3 durable facts about the user in their own voice as {"memories":
+[...]}, the user prompt carrying both sides of the turn and the existing memories; parse
+handles the object form, a bare array, fenced JSON, a <think> prefix, object items and
+bullet lines; normalize strips filler and punctuation; similar = containment or >= 75%
+word overlap; filter drops empties, over/under-long, near-duplicates of existing /
+skipped / each other, caps at 3). `src/memory_proposals.cpp`: maybeProposeMemories runs
+from afterCompletion for server chats (never private ones) when the user's message has
+40+ characters - a quiet non-streaming call to the reply's own model, existing memories
+fetched once for the dedupe, candidates kept per assistant message id; the card under the
+reply ("Remember this?" with Skip all) shows each with Save / Edit (inline field, Enter
+saves) / Skip; Save posts /api/v1/memories/add and appends to the pane's list; Skip adds
+the text to extra["memorySkipped"] (capped at 200) so it is not proposed again; setting
+extra["memoryProposals"] in the Chat card; palette "Propose memories from this reply"
+re-asks for the last reply. `--memorytest` runs 11 offline checks. Verified on a scratch
+server with qwen3:8b: a message stating a studio in Austin, a bullet-point preference and
+a peanut allergy produced exactly those three proposals (model call 24.5 s after the
+reply); Save on the first showed "Saved: ..." in green, toasted "Remembered: ...", and the
+server's memory list plus the Memories pane show it; Skip on the third removed the row and
+settings carry it under memorySkipped. Honest notes: the first attempt sent the message
+with MCP tools on, and the reply hung for ~5 minutes in the server's /ollama/api/chat
+passthrough (the known flaky passthrough path, not this feature) - the verified run had
+MCP tools off; Edit, Skip all, the dedupe against existing memories with a live list, and
+the palette command were not exercised in the GUI.
+

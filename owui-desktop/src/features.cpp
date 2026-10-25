@@ -333,6 +333,18 @@ void App::drawPalette() {
   add("Float this window on top", "command", [this] { toggleFloating(); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
+  add("Propose memories from this reply", "command", [this] {
+    std::string last;
+    for (const std::string& id : chat.branch()) {
+      if (chat.messages.at(id).role == "assistant") last = id;
+    }
+    if (last.empty()) {
+      widgets::toastInfo("No reply in this chat yet");
+      return;
+    }
+    memoryProposals.erase(last);
+    maybeProposeMemories(last);
+  });
   add("Search chats by meaning", "command", [this] {
     chatSearchSemantic = true;
     sidebarVisible = true;

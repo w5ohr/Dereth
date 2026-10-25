@@ -1348,6 +1348,7 @@ void App::afterCompletion(const std::string& assistantId) {
 
   saveActiveChat();
   maybeGenerateTitle();
+  maybeProposeMemories(assistantId);
 
   if (settings().autoFollowUps && message.error.empty() && !message.content.empty()) {
     Json messages = Json::array();

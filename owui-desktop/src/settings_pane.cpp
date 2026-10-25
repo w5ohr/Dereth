@@ -78,6 +78,11 @@ void App::drawSettingsPane() {
       cfg.save();
     }
     widgets::dimText("The text goes with the prompt, page by page, and replies can cite pages. Private chats always read locally.");
+    bool memProps = cfg.extra.value("memoryProposals", true);
+    if (ImGui::Checkbox("After a reply, suggest facts about you worth remembering (saved to Memories only when you accept)", &memProps)) {
+      cfg.extra["memoryProposals"] = memProps;
+      cfg.save();
+    }
     bool artifactAutoOpen = cfg.extra.value("artifactAutoOpen", true);
     if (ImGui::Checkbox("Open the artifact pane when a reply contains HTML or SVG", &artifactAutoOpen)) {
       cfg.extra["artifactAutoOpen"] = artifactAutoOpen;

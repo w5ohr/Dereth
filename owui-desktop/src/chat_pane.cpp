@@ -650,6 +650,7 @@ void App::drawChatPane() {
 
       // --- steering chips under the latest answer: one click, no typing
       if (!isUser && !message.streaming) drawLocalDocumentRefs(message);   // [name p.N] citations
+      if (!isUser && !message.streaming) drawMemoryProposals(messageId);    // "Remember this?" card
       if (!isUser && !message.streaming && messageId == lastAssistantId && streams_.empty() &&
           message.error.empty()) {
         ImGui::Dummy(ImVec2(0, 4));

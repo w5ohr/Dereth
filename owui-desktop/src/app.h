@@ -412,6 +412,19 @@ class App {
   double semanticSearchAt = 0.0;
   std::string chatIndexStatus;
   std::string pendingFocusMessage;   // focus this message once its chat has opened
+
+  // --- memory proposals (memory_proposals.cpp) ------------------------------
+  // Facts about the user a model picked out of a turn; saved only on Save.
+  struct MemoryProposal {
+    std::string text, edit;
+    bool editing = false;
+    int state = 0;   // 0 pending, 1 saved, 2 skipped, 3 saving
+  };
+  std::map<std::string, std::vector<MemoryProposal>> memoryProposals;   // assistant message id -> proposals
+  void maybeProposeMemories(const std::string& assistantId);
+  void acceptMemoryProposal(const std::string& assistantId, size_t index, const std::string& text);
+  void skipMemoryProposal(const std::string& assistantId, size_t index);
+  void drawMemoryProposals(const std::string& assistantId);
   std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
   void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
   void mcpImportConfig(const std::string& path);
