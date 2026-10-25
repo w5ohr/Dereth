@@ -670,3 +670,21 @@ macOS put up "Keychain Not Found" - a system dialog this harness must not touch 
 key is now lazy with the file fallback. Not covered: moving a private chat between Macs
 (the key is per keychain; an export is the way), and agent mode inside a private chat
 (it runs as a plain tool-loop reply).
+
+2026-10-24 II (65 smooth streaming), partial: follow-tail scrolling and per-chat scroll
+memory in `chat_pane.cpp` / `app.cpp`. `followTail` is cleared by a wheel-up over the
+transcript or a scrollbar drag away from the bottom, and set again whenever the view is
+within 8 px of the bottom; a streamed delta only requests the tail while following
+(otherwise it sets `newTextPending`), explicit jumps (send, regenerate, edit-and-resend,
+open, new) resume following, and a same-frame wheel-up beats a pending delta. The
+"New text ↓" pill is its own borderless ImGui window anchored to the bottom centre of
+the transcript (drawing it with SetCursorScreenPos in the parent put it under the child's
+text and tripped ImGui's bounds assert), and clicking it scrolls to the end.
+`rememberScroll` / `restoreScrollFor` keep a scroll offset per chat id and apply it two
+frames after a chat opens (when the content has a size); a chat without a memory opens
+at its end as before. Verified against a scratch server with qwen3:8b: a wheel-up over
+a 1500-word reply mid-stream parked the view - the text kept arriving below the fold
+without moving it, the pill appeared above the text, and clicking it jumped to the
+live end; scrolling a finished chat to the top, opening another chat and coming back
+restored the top instead of the end. Not done from the item's wording: the per-token
+fade-in (the markdown renderer has no per-glyph alpha yet) - the item stays open for it.

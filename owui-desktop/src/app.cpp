@@ -436,8 +436,12 @@ std::string App::fetchImageBytes(const std::string& url) {
 // ------------------------------------------------------------------ chat ops
 
 void App::newChat() {
+  rememberScroll();
   stopAllStreams();
   saveDraft();
+  followTail = true;
+  newTextPending = false;
+  pendingScrollRestore = -1.0f;
   chat = ChatDoc();
   chat.models = selectedModels;
   attachments.clear();
@@ -445,12 +449,33 @@ void App::newChat() {
   ++composerGeneration;
   restoreDraft();
   scrollToBottom = true;
+  followTail = true;
   focusComposer = true;
   pane = Pane::Chat;
 }
 
+void App::rememberScroll() {
+  if (!chat.id.empty()) scrollMemory[chat.id] = lastScrollY;
+}
+
+// A remembered offset is applied a couple of frames in, once the messages
+// have a size; otherwise the chat opens at its end.
+void App::restoreScrollFor(const std::string& id) {
+  auto it = scrollMemory.find(id);
+  if (it != scrollMemory.end()) {
+    pendingScrollRestore = it->second;
+    scrollRestoreFrames = 2;
+    followTail = false;
+  } else {
+    scrollToBottom = true;
+    followTail = true;
+  }
+  newTextPending = false;
+}
+
 void App::openChat(const std::string& id) {
   if (id == chat.id) return;
+  rememberScroll();
   if (isPrivateChat(id)) {
     openPrivateChat(id);
     return;
@@ -487,7 +512,7 @@ void App::openChat(const std::string& id) {
       composer.clear();
       ++composerGeneration;
       restoreDraft();
-      scrollToBottom = true;
+      restoreScrollFor(id);
       focusComposer = true;
       focusedMessageId.clear();
       updateHandoffAndSpotlight();
@@ -1003,6 +1028,7 @@ void App::sendMessage(const std::string& textIn) {
   pushHistory(historyOverride_.empty() ? text : historyOverride_);
   clearDraft(draftKey());
   scrollToBottom = true;
+  followTail = true;
 
   if (chat.id.empty()) {
     // Create the chat server-side first so the id is attached to the run.
@@ -1060,6 +1086,7 @@ void App::regenerate(const std::string& assistantMessageId) {
   chat.messages[assistant.id] = assistant;
   chat.currentId = assistant.id;
   scrollToBottom = true;
+  followTail = true;
   // The server creates the reply's record itself when the task starts, with
   // no parent; saving the linked placeholder first keeps the thread intact.
   const std::string assistantId = assistant.id;
@@ -1102,6 +1129,7 @@ void App::editAndResend(const std::string& userMessageId, const std::string& new
   }
   if (!pending.empty()) chat.currentId = pending.front().first;
   scrollToBottom = true;
+  followTail = true;
   for (const auto& [assistantId, model] : pending) startStream(assistantId, model);
 }
 
@@ -1136,7 +1164,8 @@ void App::pollStreams() {
             timings[stream->messageId].firstTokenMs = core::nowMillis();
           }
           message.content = stream->content;
-          if (scrollToBottom == false) scrollToBottom = true;
+          if (followTail) scrollToBottom = true;
+          else newTextPending = true;
         }
         message.reasoning = stream->reasoning;
         message.status = stream->status;

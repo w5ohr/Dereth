@@ -145,7 +145,7 @@ void App::openPrivateChat(const std::string& id) {
   composer.clear();
   ++composerGeneration;
   restoreDraft();
-  scrollToBottom = true;
+  restoreScrollFor(id);
   focusComposer = true;
   focusedMessageId.clear();
   native::clearHandoff();

@@ -571,6 +571,18 @@ class App {
   bool chatsLoading = false;
   bool modelsLoading = false;
   bool scrollToBottom = false;
+  // Smooth streaming: the transcript follows new text only while the reader
+  // is at the bottom; scrolling up parks it and a "New text" pill brings it
+  // back. Scroll offsets are remembered per chat.
+  bool followTail = true;
+  bool newTextPending = false;          // text arrived while parked
+  float lastScrollY = 0.0f;
+  float lastScrollMaxY = 0.0f;
+  float pendingScrollRestore = -1.0f;   // scroll offset to apply once the chat has laid out
+  int scrollRestoreFrames = 0;
+  std::map<std::string, float> scrollMemory;
+  void rememberScroll();                // before leaving the open chat
+  void restoreScrollFor(const std::string& id);   // after opening one
   bool focusComposer = true;
   int composerGeneration = 0;   // bumped on send to reset the input widget
   bool showModelPicker = false;

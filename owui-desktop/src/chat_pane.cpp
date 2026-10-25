@@ -740,13 +740,65 @@ void App::drawChatPane() {
     }
 
     ImGui::Dummy(ImVec2(0, 20));
-    if (scrollToBottom) {
-      ImGui::SetScrollHereY(1.0f);
-      if (streams_.empty()) scrollToBottom = false;
+
+    // Follow-tail: a wheel-up or a scrollbar drag away from the bottom parks
+    // the view; reaching the bottom again (by any means) resumes following.
+    const float scrollY = ImGui::GetScrollY();
+    const float scrollMaxY = ImGui::GetScrollMaxY();
+    const bool hovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    if (hovered && ImGui::GetIO().MouseWheel > 0.0f && scrollMaxY > 0.0f) followTail = false;
+    if (scrollMaxY == lastScrollMaxY && scrollY < lastScrollY - 1.0f) followTail = false;   // dragged up
+    if (scrollMaxY - scrollY < 8.0f && pendingScrollRestore < 0.0f) {
+      followTail = true;
+      newTextPending = false;
     }
+    if (pendingScrollRestore >= 0.0f) {
+      if (--scrollRestoreFrames <= 0 && scrollMaxY > 0.0f) {
+        ImGui::SetScrollY(std::min(pendingScrollRestore, scrollMaxY));
+        followTail = scrollMaxY - pendingScrollRestore < 8.0f;
+        pendingScrollRestore = -1.0f;
+      }
+    } else if (scrollToBottom && followTail) {
+      // A streamed delta asked for the tail; a wheel-up this same frame wins.
+      ImGui::SetScrollHereY(1.0f);
+      newTextPending = false;
+      scrollToBottom = false;
+    } else if (scrollToBottom) {
+      scrollToBottom = false;
+      newTextPending = true;
+    }
+    lastScrollY = ImGui::GetScrollY();
+    lastScrollMaxY = scrollMaxY;
     handleKeyboardNavigation(path);
   }
+  const ImVec2 transcriptMin = ImGui::GetWindowPos();
+  const ImVec2 transcriptMax(transcriptMin.x + ImGui::GetWindowWidth(), transcriptMin.y + ImGui::GetWindowHeight());
   ImGui::EndChild();
+
+  // "New text" pill: text arrived below the fold while the reader was parked.
+  // Its own little window, so it floats above the transcript's text.
+  if (!followTail && newTextPending) {
+    const ImVec2 size(118.0f, 28.0f);
+    ImGui::SetNextWindowPos(ImVec2((transcriptMin.x + transcriptMax.x) * 0.5f, transcriptMax.y - 16.0f),
+                            ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    if (ImGui::Begin("##newtextpill", nullptr,
+                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                         ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground)) {
+      ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, size.y * 0.5f);
+      if (widgets::primaryButton("New text \xe2\x86\x93", size)) {
+        scrollToBottom = true;
+        followTail = true;
+        newTextPending = false;
+      }
+      ImGui::PopStyleVar();
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+  }
   if (showArtifacts) {
     ImGui::SameLine();
     drawArtifactColumn(sideWidth);

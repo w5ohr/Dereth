@@ -248,6 +248,9 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Reading while it streams:** the transcript follows new text only while
+  you are at the bottom; scroll up and it stays put, with a "New text ↓" pill
+  to jump back. Each chat remembers where you were when you return to it.
 - **Private chats:** the lock beside "New chat" starts a conversation that
   never reaches the Open WebUI server: it is stored in an encrypted file
   (AES-256-CBC + HMAC-SHA256 under a key in your keychain) in the support
