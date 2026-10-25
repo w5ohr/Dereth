@@ -294,7 +294,12 @@ class App {
   void drawPresetMenu();
   void applyPreset(const Preset& preset);
   void saveCurrentAsPreset(const std::string& name);
+  // Stop, edit, continue: a stopped (or finished) reply can be edited in
+  // place and resumed from its tail - the reply so far goes to the model as
+  // the open assistant turn (prefill) and the new tokens extend it.
   void continueReply(const std::string& assistantId);
+  void saveEditedReply(const std::string& assistantId, const std::string& text, bool andContinue);
+  std::string continueFromId;            // set while startStream builds a continuation
   void retryWithModel(const std::string& assistantId, const std::string& model);
   void compactChat();
   void togglePin(const std::string& messageId);

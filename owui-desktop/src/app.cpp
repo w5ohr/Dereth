@@ -649,6 +649,18 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
     }
     messages.push_back(entry);
   }
+  // Continuing a reply: the text so far closes the list as the assistant's
+  // open turn, so the model carries on from it instead of answering afresh.
+  if (continueFromId == assistantId && !assistant.content.empty()) {
+    // A thinking model needs a closed think block in front of the prefix,
+    // or it takes the prefix for its own thoughts and "closes" them with
+    // </think> before answering again; Ollama renders the `thinking` field
+    // as that block (Open WebUI passes it through).
+    Json prefill{{"role", "assistant"}, {"content", assistant.content}};
+    prefill["thinking"] = assistant.reasoning.empty() ? " " : assistant.reasoning;
+    prefill["reasoning_content"] = prefill["thinking"];
+    messages.push_back(prefill);
+  }
 
   // Project mode: the pinned folder's tree and ticked files ride along as a
   // system message so every turn sees the code being worked on.
@@ -779,7 +791,8 @@ bool App::serverDrivenStream() const {
 void App::startStream(const std::string& assistantId, const std::string& model) {
   // With MCP tools switched on the reply runs through the tool loop instead,
   // which talks to Ollama directly so the model can call our tools.
-  if (mcpEnabled) {
+  const bool continuing = continueFromId == assistantId;
+  if (mcpEnabled && !continuing) {
     if (!mcpToolSpecs().empty()) {
       startToolStream(assistantId, model);
       return;
@@ -792,6 +805,12 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   stream->model = model;
   stream->sessionId = sessionId_;
   streams_.push_back(stream);
+  if (continuing) {
+    // The reply so far is the prefix every delta extends.
+    const Message& existing = chat.messages.at(assistantId);
+    stream->content = existing.content;
+    stream->reasoning = existing.reasoning;
+  }
 
   Json payload = buildCompletionPayload(assistantId, model);
   const bool useStreaming = settings().streamResponses;
@@ -812,7 +831,9 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   // calls, status events and server-side persistence all behave the same.
   core::debugLog("startStream %s model=%s socket=%d sid=%s", assistantId.c_str(), model.c_str(),
                  socket_.connected() ? 1 : 0, socket_.sessionId().c_str());
-  if (socket_.connected() && !chat.id.empty()) {
+  // A continuation goes over HTTP: as a server task the message would be
+  // restarted from its new tokens and the prefix lost.
+  if (socket_.connected() && !chat.id.empty() && !continuing) {
     stream->viaSocket = true;
     payload["session_id"] = socket_.sessionId();
     const std::shared_ptr<Stream> handle = stream;
@@ -869,7 +890,7 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
       if (res.ok) {
         const Json& choices = res.data.value("choices", Json::array());
         if (!choices.empty()) {
-          stream->content = choices[0].value("message", Json::object()).value("content", "");
+          stream->content += choices[0].value("message", Json::object()).value("content", "");
         }
         if (res.data.contains("usage")) stream->usage = res.data["usage"];
       } else {

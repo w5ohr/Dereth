@@ -501,15 +501,37 @@ void App::drawChatPane() {
         theme::pop();
       } else if (message.editing) {
         ImGui::SetNextItemWidth(contentWidth);
-        ImGui::InputTextMultiline("##edit", &message.editBuffer, ImVec2(contentWidth, 120));
-        if (widgets::primaryButton("Send", ImVec2(110, 0))) {
-          const std::string text = message.editBuffer;
-          const std::string id = messageId;
-          message.editing = false;
-          editAndResend(id, text);
-          ImGui::Unindent(marginX);
-          ImGui::PopID();
-          continue;
+        const float editorHeight = isUser ? 120.0f : std::clamp(
+            ImGui::GetTextLineHeight() * (static_cast<float>(std::count(message.editBuffer.begin(),
+                                                                        message.editBuffer.end(), '\n')) + 3.0f),
+            120.0f, 420.0f);
+        ImGui::InputTextMultiline("##edit", &message.editBuffer, ImVec2(contentWidth, editorHeight));
+        if (isUser) {
+          if (widgets::primaryButton("Send", ImVec2(110, 0))) {
+            const std::string text = message.editBuffer;
+            const std::string id = messageId;
+            message.editing = false;
+            editAndResend(id, text);
+            ImGui::Unindent(marginX);
+            ImGui::PopID();
+            continue;
+          }
+        } else {
+          // An assistant reply is edited in place; "Save & continue" resumes
+          // generation from the edited tail.
+          bool saved = false, resume = false;
+          if (widgets::primaryButton("Save", ImVec2(90, 0))) saved = true;
+          ImGui::SameLine();
+          if (ImGui::Button("Save & continue")) saved = resume = true;
+          if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keep this text and let the model carry on from its end");
+          if (saved) {
+            const std::string text = message.editBuffer;
+            const std::string id = messageId;
+            saveEditedReply(id, text, resume);
+            ImGui::Unindent(marginX);
+            ImGui::PopID();
+            continue;
+          }
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) message.editing = false;
@@ -656,8 +678,13 @@ void App::drawChatPane() {
           }
           ImGui::SameLine();
           if (messageId == lastAssistantId) {
-            if (icons::button("continue", icons::Icon::Play, "Continue this reply")) {
+            if (icons::button("continue", icons::Icon::Play, "Continue this reply from where it stops")) {
               continueReply(messageId);
+            }
+            ImGui::SameLine();
+            if (icons::button("editreply", icons::Icon::Pencil, "Edit this reply (then save, or save and continue)")) {
+              message.editing = true;
+              message.editBuffer = message.content;
             }
             ImGui::SameLine();
           }

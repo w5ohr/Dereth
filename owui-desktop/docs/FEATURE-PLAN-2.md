@@ -484,3 +484,28 @@ leaf (the delete-before-save ordering), and one summary toast.
 Observation, not changed: any prompt with two or more answers renders as fan-out
 columns in the transcript until one is kept (the fan-out item's design), so a seeded
 or regenerated branch shows "2 answers - keep one" even when it was never a fan-out.
+
+2026-10-24 I (59 stop, edit, continue): `continueReply` is now a real continuation
+instead of a "continue where you left off" prompt. `buildCompletionPayload` appends the
+reply so far as the final assistant message (prefill) when `continueFromId` names it,
+`startStream` seeds the stream with the existing text so every delta extends it and
+forces the HTTP path (as a server task the message would be restarted from the new
+tokens) and skips the tool loop; `afterCompletion` saves as usual. The reply's action
+row gained a pencil: the reply opens in an editor sized to its text with Save (in
+place, `saveEditedReply`) and Save & continue (save, then continue from the edited
+tail); stopping a stream was already there, so stop -> edit -> continue is the whole
+loop. Found on the way: a thinking model given a bare assistant prefix takes it for its
+own thoughts - qwen3:8b continued correctly, then wrote `</think>` and answered again
+from scratch, with or without Ollama's `think:false`. Sending the prefill with a
+`thinking` field (the reply's reasoning, or a single space) makes Ollama's template
+render a closed think block ahead of the prefix and the model continues cleanly
+(checked directly against Ollama with think on and off); Open WebUI passes `thinking` /
+`reasoning_content` through to Ollama. Verified against a scratch server with qwen3:8b:
+a seeded reply cut at "3. Earth - the only" was continued to the full eight planets by
+the play button (first with the `</think>` artefact, which drove the fix); the pencil
+opened the editor, the text was cut back to the three-line tail, and Save & continue
+produced the clean eight-line list, saved on the server without any restart or think
+tag. Not exercised: stopping a live stream first (Stop is the existing button; a
+stopped reply is just a non-streaming message, the same state the seed put it in), and
+OpenAI-style backends (they get the same prefill message; many ignore `reasoning_content`
+and some reject an assistant-last conversation).

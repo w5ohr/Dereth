@@ -186,6 +186,11 @@ Things a browser tab can't do, plus the workflow features built on top:
   the match shortens the passage from the front until it finds it). Page
   controls, "Find passage again", the excerpt popup and "Open in Preview";
   files are cached under the app's cache folder.
+- **Stop, edit, continue:** stop a reply mid-stream, fix its text in place
+  (pencil in the reply's action row: Save, or Save & continue) and let the
+  model carry on from the edited tail - the reply so far is sent back as the
+  model's own open turn, so it continues rather than starting over. The play
+  button does the same without editing.
 - **Conversation tree:** the tree icon in the chat header opens a map of
   every branch beside the transcript - one row per turn, siblings side by
   side, the branch you are reading highlighted. Click a node to jump there

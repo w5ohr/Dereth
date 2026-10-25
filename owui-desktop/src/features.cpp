@@ -708,8 +708,36 @@ void App::drawPresetMenu() {
 // ------------------------------------------------ continue / retry / compact
 
 void App::continueReply(const std::string& assistantId) {
-  (void)assistantId;
-  sendMessage("Continue exactly where you left off. Do not repeat anything already written.");
+  auto it = chat.messages.find(assistantId);
+  if (it == chat.messages.end() || it->second.role != "assistant") return;
+  if (!streams_.empty() || it->second.streaming) return;
+  Message& message = it->second;
+  if (core::trim(message.content).empty()) {
+    regenerate(assistantId);
+    return;
+  }
+  std::string model = message.model.empty() ? (selectedModels.empty() ? "" : selectedModels.front())
+                                            : message.model;
+  if (model.empty()) return;
+  message.streaming = true;
+  message.serverStream = false;   // runs over HTTP; the server would restart the message
+  message.error.clear();
+  message.structuredChecked = false;
+  continueFromId = assistantId;
+  startStream(assistantId, model);
+  continueFromId.clear();
+}
+
+void App::saveEditedReply(const std::string& assistantId, const std::string& text, bool andContinue) {
+  auto it = chat.messages.find(assistantId);
+  if (it == chat.messages.end()) return;
+  Message& message = it->second;
+  message.content = text;
+  message.editing = false;
+  message.error.clear();
+  message.structuredChecked = false;
+  saveActiveChat();
+  if (andContinue) continueReply(assistantId);
 }
 
 void App::retryWithModel(const std::string& assistantId, const std::string& model) {
