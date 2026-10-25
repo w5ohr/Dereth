@@ -331,6 +331,8 @@ void App::drawPalette() {
   add("Undo the last apply to files", "command", [this] { undoLastApply(); });
   add("Compare models", "command", [this] { openModelCompare(); });
   add("Usage dashboard (Tools > Usage)", "command", [this] { pane = Pane::Tools; });
+  add("Export everything to a backup zip", "command", [this] { exportEverything(); });
+  add("Import chats (ChatGPT, Claude, backup)", "command", [this] { importChats(); });
   add("Toggle agent mode", "command", [this] {
     agentMode = !agentMode;
     settings().extra["agentMode"] = agentMode;

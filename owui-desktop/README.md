@@ -248,6 +248,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Backup and import:** Tools ▸ Backup exports everything to one zip -
+  every chat as JSON, the settings (tokens stay in the keychain), usage log,
+  plugins, the offline mirror and, if you tick it, the encrypted private
+  chats - and imports ChatGPT and Claude `conversations.json` exports (or
+  chat JSON from a backup) as chats on the server, tagged by source; the
+  shown branch of a ChatGPT conversation tree is kept.
 - **Usage dashboard:** every finished reply is logged locally (model, tokens
   in/out, time to first token, total time, tok/s). Tools ▸ Usage shows 7 /
   30 / 90 days or all time: headline tiles, output tokens per day stacked by

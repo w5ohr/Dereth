@@ -804,3 +804,26 @@ table (qwen3:8b 19 replies at 51.3 tok/s, llama3.3:70b 11 at 8.9, qwen3:32b 8 at
 Not exercised in the GUI: Export CSV (a save panel) and the price editor (the cost column
 is covered by the offline test). Honest limits: energy is tokens x a constant, not a
 measurement; prompt tokens for server-task replies are what Open WebUI reports.
+
+2026-10-24 IX (138 backup and import): `src/core/importers.{h,cpp}` (detect + convert:
+ChatGPT's conversations.json mapping tree followed from current_node - or a leaf when it
+is missing - up to the root, hidden system nodes and empty parts skipped, code parts
+fenced, model_slug kept as modelName; Claude's conversations.json chat_messages with
+`text` or the content[] text parts, ISO times parsed; both assembled into the chat body
+`POST /chats/new` takes with a linked history, tags imported-chatgpt / imported-claude)
+and `src/backup.cpp` (Tools > Backup: Export everything builds a work folder - chats/
+one JSON per chat from the id list with bodies from the mirror or fetched, settings.json,
+usage.jsonl, redactions.json, apply-history.json, plugins/, optionally private/ and the
+mirror-*.db - plus a README, zips it with `ditto -c -k --norsrc --noextattr` and reveals
+it; Import chats takes one or more files, converts recognised exports or accepts a
+backup's chat JSON, creates each chat on the server with a progress counter and
+refreshes the list; palette commands for both). `--importtest` runs 11 offline checks.
+Verified against a scratch server: the sample ChatGPT export (two conversations, one
+with a two-way branch) imported as two chats with 4 and 2 messages, the current branch
+kept and the code part fenced; the Claude sample imported as "Haiku about autumn"; Export
+everything wrote a 411 kB zip holding chats/ (all three), settings.json, usage.jsonl,
+redactions.json, apply-history.json, plugins/ and the mirror database. The first zip
+carried __MACOSX resource-fork entries - ditto now runs with --norsrc --noextattr (not
+re-run). Not covered: importing a backup zip whole (unzip it and pick the chats/ files),
+restoring settings or the mirror from a backup (copy them into the support folder), and
+ChatGPT exports with images or tool nodes (text parts only).

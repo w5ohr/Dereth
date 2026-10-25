@@ -444,6 +444,11 @@ class App {
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
 
+  // --- backup and import (backup.cpp) ---------------------------------------
+  void exportEverything();
+  void importChats();
+  void drawBackupSection(float width);
+
   // --- usage dashboard (usage_pane.cpp) -------------------------------------
   void recordUsage(const Message& message);   // one log line per finished reply
   void drawUsageSection(float width);
