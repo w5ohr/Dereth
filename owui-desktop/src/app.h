@@ -801,6 +801,16 @@ class App {
   std::map<std::string, ImU32> themeOverridesForCurrent() const;
   void drawThemeEditorSection(float width);
 
+  // --- onboarding (onboarding_pane.cpp) ------------------------------------
+  bool showTour = false;
+  bool showWhatsNew = false;
+  void tickOnboarding();                 // first sign-in: the tour, then what's new once per update
+  void startTour();
+  void showWhatsNewSheet(bool everything);
+  void drawTour();
+  void drawWhatsNew();
+  void drawOnboardingSection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

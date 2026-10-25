@@ -1602,3 +1602,23 @@ accent live and removed only that key from settings; Copy as JSON put the three 
 overrides on the clipboard; Reset all restored the default look and removed
 themeOverrides from settings. Not covered: dragging a colour well, the Import open panel
 (importers self-test only), the server accent well, light and midnight themes.
+
+2026-10-25 145 (onboarding): `src/core/onboarding.*` (eight tour steps with anchors;
+State <-> extra["onboarding"] (tourDone, tourStep clamped, lastSeenVersion); a built-in
+release list (1.1 with this round's features, 1.0); `compareVersion`;
+`pendingReleases(lastSeen, current)`; `whatsNewText`). `src/onboarding_pane.cpp`:
+`tickOnboarding` on the first signed-in frame starts the tour when it was never finished
+(resuming at the saved step) or opens the what's-new sheet when release notes newer than
+the last seen are pending; the tour is a modal card (its dim covers the window) placed
+beside an accent outline drawn around the step's region (rail, chat list, header,
+composer, Tools and Settings rail icons) with Back / Next / Skip and Escape; finishing
+saves tourDone and hands over to what's new; the what's-new modal lists the pending
+releases with Got it (saves lastSeenVersion), Copy and Take the tour; Settings "GETTING
+STARTED" card with Take the tour, What's new and the cheat sheet; palette commands. The
+bundle version is now 1.1. `--onboardtest` runs 7 offline checks. Verified on a scratch
+home with no onboarding state: the tour opened on sign-in (step 1 of 8 centred), Next
+moved to "The rail" with the accent outline around the rail and the card beside it, Skip
+tour saved tourDone and opened the what's-new sheet for 1.1 (lastSeenVersion was empty),
+and Got it recorded 1.1. A first cut drew the shade on the foreground list, which dimmed
+the card too - replaced by the modal. Not covered: Back, the remaining six steps'
+placement, resuming a half-done tour after a relaunch, and the Settings card buttons.

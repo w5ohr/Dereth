@@ -627,6 +627,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   instance you are on. Overrides live in settings (`themeOverrides`,
   `serverAccents`). `Open WebUI --themetest` covers hex parsing, the slot
   table, overrides, the importers and the export.
+- **Onboarding:** the first sign-in starts an eight-step tour - a card
+  beside a spotlight on the rail, the chat list, the composer, the header,
+  the palette, Tools and Settings - with Back, Next and Skip, and your place
+  is kept if you quit midway. After an update a "what's new" sheet lists the
+  release notes you have not seen yet, once. Settings ▸ Getting started brings
+  the tour, the release notes and the ⌘/ cheat sheet back any time, and the
+  palette has "Take the tour" and "What's new". The app version is now 1.1.
+  `Open WebUI --onboardtest` covers the steps, the saved state, version
+  comparison and which release notes are pending.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -1515,13 +1515,14 @@ void App::frame() {
   pollStreams();
   tickTts();
   tickSmartFolders();
+  tickOnboarding();
   handleShortcuts();
 
   // The native composer is a Cocoa view above everything ImGui draws, so it
   // only shows while the chat pane placed it last frame and nothing modal is
   // open over the window.
   {
-    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet ||
+    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet || showTour || showWhatsNew ||
                          showProjectFiles ||
                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     native::composerSetVisible(composerShownThisFrame && !overlay);
@@ -1683,6 +1684,8 @@ void App::frame() {
     drawContextInspector();
     drawPlayground();
     drawCheatSheet();
+    drawWhatsNew();
+    drawTour();
     drawPromptForm();
     drawRedactionSheet();
   drawBudgetSheet();

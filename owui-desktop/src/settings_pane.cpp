@@ -134,6 +134,10 @@ void App::drawSettingsPane() {
   drawShortcutsSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("GETTING STARTED");
+  drawOnboardingSection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("ACCOUNT");
   card("account", [&] {
     field("Name", user_.value("name", ""));

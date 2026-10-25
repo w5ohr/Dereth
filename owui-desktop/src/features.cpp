@@ -387,6 +387,8 @@ void App::drawPalette() {
   add("Keyboard shortcuts cheat sheet", "command", [this] { showCheatSheet = true; });
   add("Shortcut editor (rebind keys, Vim mode)", "settings", [this] { pane = Pane::Settings; });
   add("Theme editor (colours, VS Code / Base16 import, server accent)", "settings", [this] { pane = Pane::Settings; });
+  add("Take the tour", "command", [this] { startTour(); });
+  add("What's new in this version", "command", [this] { showWhatsNewSheet(true); });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;
     for (const std::string& id : chat.branch()) {
