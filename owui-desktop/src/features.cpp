@@ -280,7 +280,7 @@ void App::handleOpenUrl(const std::string& url) {
 }
 
 void App::updateHandoffAndSpotlight() {
-  if (chat.id.empty()) {
+  if (chat.id.empty() || chat.isPrivate) {
     native::clearHandoff();
     return;
   }
@@ -327,6 +327,7 @@ void App::drawPalette() {
   add("Open this chat as a floating mini window", "command", [this] { openChatInNewWindow(chat.id, true); });
   add("Float this window on top", "command", [this] { toggleFloating(); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
+  add("New private chat", "command", [this] { newPrivateChat(); });
   add("Toggle agent mode", "command", [this] {
     agentMode = !agentMode;
     settings().extra["agentMode"] = agentMode;

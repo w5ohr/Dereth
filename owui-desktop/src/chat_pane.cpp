@@ -92,6 +92,11 @@ void App::drawChatPane() {
         gEditingTitle = true;
         gTitleEdit = chat.title;
       }
+      if (chat.isPrivate) {
+        ImGui::SameLine();
+        icons::inlineIcon(icons::Icon::Lock, palette.accent);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Private chat: encrypted on this Mac, replies straight from Ollama, never on the server");
+      }
     }
     ImGui::PopStyleColor();
 

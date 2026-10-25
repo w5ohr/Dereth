@@ -645,3 +645,28 @@ story finished in 15 s, before the kill, and correctly left no record. Not exerc
 the client-driven branch (a Continue run finished within the 6 s before the kill) and
 the "finished while closed" toast on its own (the resumed poll covered that case
 because the server finished during the relaunch gap).
+
+2026-10-24 IX (132 private chats): `src/core/privatestore.{h,mm}` (seal / open with
+AES-256-CBC + HMAC-SHA256 over derived keys, "OWP1" + IV + ciphertext + tag, constant-time
+tag check; save writes a 0600 temp file and renames; load / list / remove; `local-` ids)
+and `src/private_chats.cpp` (the 32-byte key from the keychain, made on first use and
+never touched at launch; `OWUI_NO_KEYCHAIN=1` or a missing keychain falls back to a 0600
+`.key` file with a toast; new / save / open / delete; `startPrivateStream` runs the tool
+loop straight at `settings().ollamaUrl` - MCP tools only when the composer toggle is on -
+and refuses with a note when no URL is set; `maybeGeneratePrivateTitle` asks the local
+model for 3-6 words; a PRIVATE sidebar section with lock rows and a Delete menu; a lock
+badge in the chat header; palette "New private chat"). Hooks: `saveActiveChat`,
+`startStream`, `afterCompletion` (no chatCompleted / server title / follow-ups),
+`openChat`, `deleteChat`, `serverDrivenStream`, `updateHandoffAndSpotlight` and the
+in-flight snapshot (private chats are never written there in the clear) all branch on
+`ChatDoc::isPrivate` / the id prefix. `--privatetest` runs 19 offline checks. Verified
+against a scratch server with qwen3:8b: the lock button made "Private chat" under a
+PRIVATE header with the badge in the header; a prompt was answered by Ollama directly
+(23 in / 122 out), the title became "Capital of France Answered", support/private held
+one `.enc` file and `.key` (both 0600), the server's chat list stayed at zero, the chat
+reopened from the file after a relaunch and a second reply left no in-flight snapshot.
+Found on the way: the first run called the keychain at launch under the scratch HOME and
+macOS put up "Keychain Not Found" - a system dialog this harness must not touch - so the
+key is now lazy with the file fallback. Not covered: moving a private chat between Macs
+(the key is per keychain; an export is the way), and agent mode inside a private chat
+(it runs as a plain tool-loop reply).

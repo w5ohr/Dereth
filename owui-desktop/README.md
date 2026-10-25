@@ -248,6 +248,14 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Private chats:** the lock beside "New chat" starts a conversation that
+  never reaches the Open WebUI server: it is stored in an encrypted file
+  (AES-256-CBC + HMAC-SHA256 under a key in your keychain) in the support
+  folder, replies come straight from Ollama (set the Ollama URL in Settings),
+  and the title is written by a local model call. Private chats sit in their
+  own sidebar section with a lock; redaction, prompt variables, plugins and
+  MCP tools work in them as anywhere. `Open WebUI --privatetest` checks the
+  store offline.
 - **Stream recovery:** every reply in flight is snapshotted to a local file as
   it arrives. After a crash or a quit mid-reply, the next launch checks the
   server: a reply it finished meanwhile is reported, one its background task

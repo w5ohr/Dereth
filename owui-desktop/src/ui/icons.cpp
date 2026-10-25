@@ -264,6 +264,13 @@ void draw(ImDrawList* dl, Icon icon, ImVec2 c, float s, ImU32 col, float t) {
                   q * 0.3f, t);
       line(dl, ImVec2(c.x, c.y + q * 0.5f), ImVec2(c.x, c.y + h), col, t);
       break;
+    case Icon::Lock:
+      // A padlock: shackle over a body.
+      dl->AddRect(ImVec2(c.x - h * 0.8f, c.y - q * 0.1f), ImVec2(c.x + h * 0.8f, c.y + h * 0.9f), col, q * 0.3f, t);
+      dl->PathArcTo(ImVec2(c.x, c.y - q * 0.3f), h * 0.5f, 3.14159f, 2.0f * 3.14159f, 10);
+      dl->PathStroke(col, t);
+      dl->AddCircleFilled(ImVec2(c.x, c.y + q * 0.5f), t * 0.9f, col);
+      break;
     case Icon::Tree:
       // One node above two: a root with its branches.
       dl->AddCircle(ImVec2(c.x, c.y - h * 0.65f), q * 0.5f, col, 0, t);

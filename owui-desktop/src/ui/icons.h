@@ -9,7 +9,7 @@ enum class Icon {
   Plus, Send, Stop, Copy, Trash, Pencil, Refresh, Chevron, ChevronRight, Search,
   Paperclip, Mic, Image, Pin, Star, Gear, User, Folder, Chat, Archive, Share,
   ThumbUp, ThumbDown, Globe, Code, Book, Sparkle, Check, Close, Menu, Download,
-  Speaker, Branch, Info, Warning, Play, Note, Channel, Wrench, Brain, Layers, Plug, Camera, Tree,
+  Speaker, Branch, Info, Warning, Play, Note, Channel, Wrench, Brain, Layers, Plug, Camera, Tree, Lock,
 };
 
 void draw(ImDrawList* drawList, Icon icon, ImVec2 center, float size, ImU32 color,

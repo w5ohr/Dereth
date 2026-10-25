@@ -174,6 +174,7 @@ struct ChatDoc {
   int64_t updatedAt = 0;
   Json params = Json::object();
   Json raw = Json::object();    // server fields we round-trip untouched
+  bool isPrivate = false;       // lives in an encrypted local file, talks to Ollama directly
 
   std::vector<std::string> branch() const;
   std::vector<std::string> siblings(const std::string& messageId) const;
@@ -436,6 +437,20 @@ class App {
   void drawPluginsSection(float width);
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
+
+  // --- private chats (private_chats.cpp) ------------------------------------
+  // "local-" chats never reach the server: encrypted files in support/private,
+  // replies straight from Ollama, titles from a local call.
+  bool isPrivateChat(const std::string& id) const;
+  void newPrivateChat();
+  void savePrivateChat();
+  void openPrivateChat(const std::string& id);
+  void deletePrivateChat(const std::string& id);
+  void startPrivateStream(const std::string& assistantId, const std::string& model);
+  void maybeGeneratePrivateTitle();
+  void refreshPrivateChats();
+  void drawPrivateSection();
+  std::vector<ChatSummary> privateChats;
 
   // --- stream recovery (recovery.cpp) ---------------------------------------
   // Replies in flight are snapshotted to support/inflight.json; on launch a

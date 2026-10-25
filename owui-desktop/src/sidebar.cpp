@@ -46,7 +46,13 @@ void App::drawSidebar(float width) {
   ImGui::Indent(12.0f);
   const float inner = width - 24.0f;
 
-  if (widgets::primaryButton("New chat", ImVec2(inner, 34))) newChat();
+  if (widgets::primaryButton("New chat", ImVec2(inner - 40.0f, 34))) newChat();
+  ImGui::SameLine();
+  if (icons::button("newprivate", icons::Icon::Lock,
+                    "New private chat: encrypted on this Mac, replies straight from Ollama, never sent to the server",
+                    0.0f, chat.isPrivate ? palette.accent : 0)) {
+    newPrivateChat();
+  }
   ImGui::Dummy(ImVec2(0, 8));
 
   if (widgets::searchField("chatsearch", &chatSearch, "Search chats", inner)) {
@@ -280,6 +286,7 @@ void App::drawSidebar(float width) {
     ImGui::PopID();
   };
 
+  drawPrivateSection();
   if (!pinned.empty()) {
     widgets::sectionHeader("PINNED");
     for (const ChatSummary* summary : pinned) drawRow(*summary);

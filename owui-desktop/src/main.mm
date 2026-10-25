@@ -435,6 +435,7 @@ int runPromptVarsSelfTest();
 int runAgentSelfTest();
 int runPluginSelfTest();
 int runRedactSelfTest();
+int runPrivateSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -445,6 +446,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--agenttest") return runAgentSelfTest();
     if (std::string(argv[i]) == "--plugintest") return runPluginSelfTest();
     if (std::string(argv[i]) == "--redacttest") return runRedactSelfTest();
+    if (std::string(argv[i]) == "--privatetest") return runPrivateSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

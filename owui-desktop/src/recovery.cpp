@@ -13,6 +13,7 @@
 
 #include "core/async.h"
 #include "core/common.h"
+#include "core/privatestore.h"
 #include "ui/widgets.h"
 
 namespace app {
@@ -47,6 +48,7 @@ void App::saveInflight() {
   for (const auto& stream : streams_) {
     std::lock_guard<std::mutex> lock(stream->mutex);
     if (stream->done) continue;
+    if (privatestore::isPrivateId(stream->chatId)) continue;   // never in the clear on disk
     all[stream->messageId] = Json{{"chatId", stream->chatId},
                                   {"model", stream->model},
                                   {"viaSocket", stream->viaSocket},
@@ -82,7 +84,7 @@ void App::recoverInflight() {
   for (const auto& [messageId, record] : records.items()) {
     if (!record.is_object()) continue;
     const std::string chatId = record.value("chatId", "");
-    if (chatId.empty()) continue;
+    if (chatId.empty() || privatestore::isPrivateId(chatId)) continue;
     if (now - record.value("updatedAt", static_cast<int64_t>(0)) > 24 * 3600) continue;
     const std::string mid = messageId;
     const Json rec = record;

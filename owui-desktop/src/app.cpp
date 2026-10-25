@@ -228,6 +228,7 @@ ChatDoc ChatDoc::fromJson(const Json& chat, const std::string& chatId) {
     }
   }
   if (chat.contains("params") && chat["params"].is_object()) doc.params = chat["params"];
+  doc.isPrivate = chat.value("desktop_private", false);
   if (chat.contains("folder_id") && chat["folder_id"].is_string()) doc.folderId = chat["folder_id"];
 
   if (chat.contains("history") && chat["history"].is_object()) {
@@ -315,6 +316,7 @@ void App::init() {
   });
   mcpInit();
   pluginsInit();
+  refreshPrivateChats();
 }
 
 void App::shutdown() {
@@ -449,6 +451,10 @@ void App::newChat() {
 
 void App::openChat(const std::string& id) {
   if (id == chat.id) return;
+  if (isPrivateChat(id)) {
+    openPrivateChat(id);
+    return;
+  }
   stopAllStreams();
   saveDraft();
   pane = Pane::Chat;
@@ -790,6 +796,7 @@ static void addLocalIndexHits(App* app, Json* payload, const std::string& query)
 }
 
 bool App::serverDrivenStream() const {
+  if (chat.isPrivate) return false;
   if (mcpEnabled && !mcpToolSpecs().empty()) return false;   // tool loop talks to Ollama directly
   return socket_.connected() && !chat.id.empty();
 }
@@ -798,6 +805,10 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   // With MCP tools switched on the reply runs through the tool loop instead,
   // which talks to Ollama directly so the model can call our tools.
   const bool continuing = continueFromId == assistantId;
+  if (chat.isPrivate) {
+    startPrivateStream(assistantId, model);
+    return;
+  }
   if (agentMode && !continuing) {
     startAgentStream(assistantId, model);
     return;
@@ -1229,6 +1240,13 @@ void App::afterCompletion(const std::string& assistantId) {
     if (firstArtifactIn(message.content, &code, &language)) openArtifact(code, language);
   }
 
+  if (chat.isPrivate) {
+    // Nothing about this chat goes to the server: save locally, title locally.
+    saveActiveChat();
+    maybeGeneratePrivateTitle();
+    refreshPrivateChats();
+    return;
+  }
   const std::string chatId = chat.id;
   const std::string model = message.model;
   const Json payload{{"model", model},
@@ -1274,6 +1292,11 @@ void App::afterCompletion(const std::string& assistantId) {
 }
 
 void App::saveActiveChat(std::function<void()> then) {
+  if (chat.isPrivate) {
+    savePrivateChat();
+    if (then) then();
+    return;
+  }
   if (chat.id.empty()) {
     if (then) then();
     return;
@@ -1345,6 +1368,10 @@ void App::maybeGenerateTitle() {
 }
 
 void App::deleteChat(const std::string& id) {
+  if (isPrivateChat(id)) {
+    deletePrivateChat(id);
+    return;
+  }
   native::removeChatFromSpotlight(id);
   store::removeChat(id);
   async::run([this, id] {
