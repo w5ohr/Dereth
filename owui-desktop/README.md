@@ -861,6 +861,18 @@ Things a browser tab can't do, plus the workflow features built on top:
   a SHA-256. `scripts/make-dmg.sh` writes the `appcast.xml` beside the DMG
   and cask. `Open WebUI --updatetest` parses feeds and does a real install
   and rollback from a DMG.
+- **Audio transcription:** Tools ▸ Transcribe (or the palette) takes an
+  audio file - opened, or dropped on the tab: wav, m4a, mp3, aiff, flac,
+  caf, mp4 audio. It is decoded on this Mac with AVFoundation (no
+  microphone, no permission), split into phrases at the pauses, and each
+  phrase goes to the server's speech-to-text in turn, so every line carries
+  its start time. A player plays, pauses and seeks; clicking a line plays
+  from it, and the line being heard is highlighted and kept in view. Copy
+  as Markdown, save .srt, .vtt or .md, or Send to chat. Transcripts are
+  kept per file (by content hash), so reopening a file shows it at once;
+  Transcribe again redoes it. `Open WebUI --transcribetest` covers the
+  splitting, the WAV cutting, the exports, and decoding real files made
+  with `say`.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

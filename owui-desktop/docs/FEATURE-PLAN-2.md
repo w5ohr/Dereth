@@ -2283,3 +2283,46 @@ delta updates, an EdDSA signature on the feed (the hash is only as trustworthy a
 feed's HTTPS host until Developer ID signing, #128), translocated or read-only installs
 beyond the refusal message, and publishing a real release (the default feed URL has
 no appcast yet, so a check there reports the HTTP error).
+
+2026-10-25 114 (audio transcription): the server's /api/v1/audio/transcriptions (Open WebUI
+0.12.3, local faster-whisper "base") returns only {"text"} - no timestamps - so the
+timing is done here: `src/core/transcript.*` - `segment` (20 ms RMS frames in dB, a
+threshold 30 % of the way from the 10th-percentile floor to the 95th-percentile level,
+voiced runs joined across pauses under 0.30 s, runs over 25 s cut at their quietest
+frame in the second half, segments under 1.5 s merged into a neighbour, 0.15 s padding
+with overlapping pads split; no contrast means one span or none), `wav16` / `readWav16`
+(16-bit mono PCM WAV), `clock` (m:ss, h:mm:ss, SRT's hh:mm:ss,mmm), `lineAt`, `toSrt`,
+`toVtt`, `toMarkdown`, `plainText`, `cleanText` (drops [BLANK_AUDIO]-style tags,
+collapses whitespace), `isAudioPath`; `src/core/audiodecode.mm` - `decodeAudio` with
+AVAudioFile + AVAudioConverter to 16 kHz mono float (no microphone, no prompt).
+`src/transcribe_pane.mm`: a Tools "Transcribe" tab after Notebook (palette entry; the
+forced-tab request takes "transcribe"); Open audio... or an audio file dropped while
+the tab is showing (the drop handler routes it there instead of attaching it to a
+chat); the file is hashed (SHA-256) and a saved transcript in support/transcripts/<hash>.json
+opens at once, otherwise it is decoded and segmented on a worker and each segment's WAV
+goes to `api_.transcribe` in order, lines filling in as they come back, with Stop and a
+"transcribing piece n of m" row; an AVAudioPlayer with Play / Pause, a seek slider and
+the time; lines as full-width selectables (click = seek + play, tooltip) with the time in
+mono and the text drawn over them, the one being heard highlighted and scrolled into
+view; Copy text (Markdown with times), Save .srt / .vtt / .md, Send to chat (the
+composer gets the Markdown), Transcribe again. `--transcribetest` runs 15 checks:
+synthetic amplitude-modulated bursts over noise (three phrases with 1 s pauses -> three
+spans, a 0.15 s breath not splitting, a 0.3 s blip merged, a pause-free minute cut into
+pieces of at most 25 s, silence / constant tone), the WAV cut reading back, clock,
+lineAt, SRT, VTT, Markdown / plain / cleanText, isAudioPath, and `say` output - a
+22 kHz WAV and an AAC .m4a decoding to the same 9.2 s at 16 kHz, its two 1.2 s
+[[slnc]] pauses giving three sentences - and an unreadable file reported. Verified on a
+scratch Open WebUI 0.12.3: a 16.5 s four-sentence `say` recording (AAC) opened through
+the app's Open panel came back as four timed lines - 0:00 "Welcome to the Lighthouse
+Keepers Briefing.", 0:03 "The lenses polished every Monday before sunrise.", 0:08 "The
+fog horn is tested on the first of each month.", 0:12 "Visitors may climb the tower on
+weekends, but never during a storm." (whisper's own mishearings); reopening the file
+loaded the saved transcript with no new server requests; clicking the 0:08 line played
+from 0:08 and the highlight moved on to 0:12 as it played; Copy text gave the Markdown;
+Send to chat filled the composer. One defect fixed on the way: the first draw put each
+line's text after its full-width selectable, so only the times showed, and the next
+attempt moved the cursor past the last item (an ImGui assert) - the text is now drawn
+on the window's draw list over the selectable. Not covered: dropping a file (no drag
+source in the harness; the routing is code-reviewed), very long recordings (pieces
+go one at a time, so an hour takes as long as the server needs for each), private
+chats / offline transcription (no local whisper), and speaker labels.

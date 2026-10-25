@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <ctime>
 
+#include "core/transcript.h"
 #include "app.h"
 
 #include "plugins/plugin_host.h"
@@ -191,6 +192,11 @@ void App::installNativeHooks() {
   };
   callbacks.dropFiles = [this](const std::vector<std::string>& paths) {
     async::post([this, paths] {
+      // An audio file dropped on the Transcribe tab is transcribed, not attached.
+      if (pane == Pane::Tools && transcribeTabVisible() && paths.size() == 1 && transcript::isAudioPath(paths.front())) {
+        openAudioForTranscript(paths.front(), false);
+        return;
+      }
       pane = Pane::Chat;
       attachFiles(paths);
       widgets::toast(widgets::ToastLevel::Success,
@@ -362,6 +368,7 @@ void App::drawPalette() {
   add("LSP context (clangd / pyright definitions sent with code questions)", "settings", [this] { pane = Pane::Settings; });
   add("Stop the language servers", "command", [this] { async::run([this] { stopLspServers(); }); });
   add("Notebook (Python cells, prompts, .ipynb)", "tools", [this] { openNotebookTab(); });
+  add("Transcribe an audio file (timestamped, click to play)", "tools", [this] { openTranscribeTab(); });
   add("Crash reports", "settings", [this] { pane = Pane::Settings; });
   add("Check for updates", "command", [this] {
     pane = Pane::Settings;
