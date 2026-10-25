@@ -20,7 +20,7 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, Graph, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Traffic, Evaluate, Health, Models };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, Graph, Notebook, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Traffic, Evaluate, Health, Models };
 
 Tab gTab = Tab::Command;
 int gForceFrames = 0;   // frames left to hold a tab the palette asked for
@@ -63,6 +63,7 @@ const char* tabName(Tab tab) {
     case Tab::Audit: return "Audit";
     case Tab::Traffic: return "Traffic";
     case Tab::Graph: return "Graph";
+    case Tab::Notebook: return "Notebook";
     case Tab::Evaluate: return "Evaluate";
     case Tab::Health: return "Health";
     case Tab::Models: return "Models";
@@ -215,12 +216,12 @@ void App::drawToolsPane() {
   const auto& palette = theme::palette();
 
   if (ImGui::BeginTabBar("##toolstabs")) {
-    if (toolsTabRequest == "graph") {
-      gTab = Tab::Graph;
+    if (toolsTabRequest == "graph" || toolsTabRequest == "notebook") {
+      gTab = toolsTabRequest == "graph" ? Tab::Graph : Tab::Notebook;
       gForceFrames = 2;
       toolsTabRequest.clear();
     }
-    for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex, Tab::Graph,
+    for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex, Tab::Graph, Tab::Notebook,
                     Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop, Tab::Audit, Tab::Traffic, Tab::Evaluate, Tab::Health, Tab::Models}) {
       if (ImGui::BeginTabItem(tabName(tab), nullptr, gForceFrames > 0 && gTab == tab ? ImGuiTabItemFlags_SetSelected : 0)) {
         if (gForceFrames == 0) gTab = tab;
@@ -602,6 +603,9 @@ void App::drawToolsPane() {
       break;
     case Tab::Graph:
       drawGraphSection(width);
+      break;
+    case Tab::Notebook:
+      drawNotebookSection(width);
       break;
     case Tab::Evaluate:
       drawEvalSection(width);

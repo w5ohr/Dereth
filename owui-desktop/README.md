@@ -798,6 +798,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   paths). `Open WebUI --lsptest` covers the framing, the identifier scan,
   symbol flattening, hover text and the block, plus a live clangd round
   trip when clangd is installed.
+- **Notebook mode:** Tools ▸ Notebook (or the palette) holds code, prompt
+  and text cells over a persistent Python kernel - the system python3
+  running a small driver, so no Jupyter install is needed. Shift+Enter runs
+  a cell; stdout, stderr, the last expression's value, tracebacks (driver
+  frames hidden) and matplotlib figures (as PNG, when matplotlib is
+  installed) show inline with `In [n]` counts. Prompt cells go to the
+  selected model with the notebook so far as context, and "Insert code
+  below" turns the code in an answer into the next cell. Run all (stops at
+  the first error), Interrupt, Restart kernel, a two-minute cell timeout,
+  markdown cells rendered until double-clicked. Notebooks save as .ipynb
+  (nbformat 4.5) under support/notebooks, reopen where you left off, and
+  import / export as files Jupyter reads; prompt cells export as readable
+  markdown with the prompt and answer kept in metadata. `Open WebUI
+  --notebooktest` covers the format, the context and a live kernel.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

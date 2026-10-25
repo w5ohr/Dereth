@@ -361,6 +361,7 @@ void App::drawPalette() {
   add("Sketch input (draw and attach to the message)", "chat", [this] { pane = Pane::Chat; openSketch(); });
   add("LSP context (clangd / pyright definitions sent with code questions)", "settings", [this] { pane = Pane::Settings; });
   add("Stop the language servers", "command", [this] { async::run([this] { stopLspServers(); }); });
+  add("Notebook (Python cells, prompts, .ipynb)", "tools", [this] { openNotebookTab(); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
   add("Propose memories from this reply", "command", [this] {

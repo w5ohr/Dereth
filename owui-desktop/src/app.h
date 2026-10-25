@@ -848,6 +848,14 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- notebook mode (notebook_pane.cpp) ------------------------------------
+  void ensureKernel();
+  void openNotebookTab();
+  void queueNotebookCell(const std::string& id);
+  void askNotebookPrompt(const std::string& id);
+  void tickNotebook();
+  void drawNotebookSection(float width);
+
   // --- LSP context (lsp_context.cpp) ----------------------------------------
   std::string lspLookup(const std::string& question, const std::string& folder, std::string* log);   // blocking
   void addLspContext(Json* payload, const std::string& question, const std::string& folder);         // worker thread

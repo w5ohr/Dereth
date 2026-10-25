@@ -2036,3 +2036,50 @@ as an identifier. Not covered: pyright / typescript / gopls / rust-analyzer (not
 installed here), the private-chat and MCP tool-loop paths (the block is added on the
 two server paths only), and very large projects (the file walk stops at 8000 entries,
 the grep reads at most 2500 files).
+
+2026-10-25 98 (notebook mode): `src/core/notebook.*` - Cell {id, kind code | prompt |
+markdown, source, outputs, count, model}, Output {stream / result / error / image /
+answer}; `toIpynb` (nbformat 4.5: kernelspec python3, language_info version, cell ids,
+source as newline-kept lines; code outputs as stream / execute_result / display_data
+image/png / error; a prompt cell as a markdown cell "**Prompt:** ..." plus the answer,
+with metadata.owui {kind, prompt, answer, model}); `fromIpynb` (rejects non-notebooks
+and nbformat < 4; reads Jupyter-made files - string sources, null counts, raw cells,
+missing ids); `promptContext` (In [n] code with outputs truncated at 1500 chars, figures
+noted, markdown, earlier Q / A, oldest cells dropped to fit 12000 chars);
+`extractPython`; `stripThinking`. Kernel: python3 (Homebrew, /usr/local or /usr/bin)
+spawned with `-u -c` and a driver that keeps one namespace, parses each cell with ast
+and evals a trailing expression, redirects stdout / stderr, reports SystemExit and
+exceptions with tracebacks minus its own frames, ignores SIGINT while idle and turns it
+into KeyboardInterrupt while a cell runs, and saves matplotlib figures (MPLBACKEND=Agg)
+as base64 PNG; JSON lines both ways, non-protocol stdout (os.write(1, ...)) folded
+into the cell's output; `execute` with a timeout that interrupts and reports it;
+`restart`; `stop` closes stdin and reaps. `src/notebook_pane.cpp`: a Tools "Notebook"
+tab after Graph (palette entry; the forced-tab mechanism now takes "graph" or
+"notebook"): title, New, Open (newest first, by title), Import / Export .ipynb, Run all,
+Interrupt, Restart kernel and a "Python 3.15.0 - idle / busy / starting / stopped"
+state; cells with In [n] / In [*] / In [ ] gutters, multiline editors (mono for code)
+where Shift+Enter runs - a char filter drops the newline Shift+Enter would type - and
+moves focus to the next cell; Run / Ask / Edit-Done, kind combo, Up, Down, + Code,
++ Prompt, + Text, Delete, Clear output; outputs inline (stdout dim, stderr amber, Out:
+values, errors red with a collapsible traceback, figures through the image cache);
+prompt answers rendered as markdown with "Insert code below" and the model name; a run
+queue drained one cell at a time on a worker (the kernel is a shared_ptr the worker
+holds), stopped at the first error; autosave to support/notebooks/*.ipynb after edits
+and runs; the kernel starts lazily in the project folder (or home). `--notebooktest`
+runs 21 checks (format round trips, Jupyter-made input, context, and a live kernel:
+state between cells, NameError traceback without driver frames, None silent, an
+interrupt of `while True` in ~0.4 s, a 0.6 s timeout, fd-1 writes, SystemExit, restart,
+stop). Verified on a scratch home: palette > Notebook opened a new notebook; renamed
+"Circle maths"; a typed four-line cell run with Shift+Enter showed "radius 3" and
+"Out: 28.274" as In [1] on Python 3.15.0 with no stray newline; a prompt cell sent to
+qwen3:8b came back with code that used the existing r and math; "Insert code below" +
+Shift+Enter ran it as In [2] (Area 28.27, Circumference 18.85); `area / (r - 3)` gave
+ZeroDivisionError with a 3-line traceback; Restart kernel cleared the counts with a
+toast and Run all re-ran 1-3 stopping at the error; the autosaved file read as
+nbformat 4.5 with ids, outputs and the prompt metadata; after quitting (no python
+process left) and relaunching, the tab reopened the notebook as it was. One defect
+fixed before testing: the first draft handed the kernel from the worker through a
+reinterpret_cast of a shared_ptr - replaced by a shared_ptr held everywhere. Not
+covered: figures (matplotlib is not installed here; the self-test checks the protocol
+path only), Import / Export through the file dialogs, Interrupt from the button (the
+self-test interrupts the same way), and input() (unsupported: stdin is the protocol).
