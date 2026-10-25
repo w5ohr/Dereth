@@ -444,20 +444,29 @@ agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
       stream->status.clear();
     }
   };
-  hooks.approve = [stream, autoApprove, approvals](const agents::Call& call) -> int {
+  hooks.approve = [this, stream, autoApprove, approvals, byName](const agents::Call& call) -> int {
     const std::string policy = approvals.is_object() ? approvals.value(call.name, "ask") : "ask";
-    if (policy == "never") return agents::Deny;
-    if (autoApprove || policy == "always") return agents::Allow;
-    std::unique_lock<std::mutex> lock(stream->mutex);
-    while (true) {
-      for (const ToolCall& t : stream->toolCalls) {
-        if (t.id == call.id && t.decision != 0) {
-          return t.decision == agents::Deny ? agents::Deny : agents::Allow;
+    auto decide = [&]() -> std::pair<int, std::string> {
+      if (policy == "never") return {agents::Deny, "denied (never)"};
+      if (autoApprove) return {agents::Allow, "allowed (auto-approve)"};
+      if (policy == "always") return {agents::Allow, "allowed (always)"};
+      std::unique_lock<std::mutex> lock(stream->mutex);
+      while (true) {
+        for (const ToolCall& t : stream->toolCalls) {
+          if (t.id == call.id && t.decision != 0) {
+            return t.decision == agents::Deny ? std::make_pair(static_cast<int>(agents::Deny), std::string("denied (user)"))
+                                              : std::make_pair(static_cast<int>(agents::Allow), std::string("allowed (user)"));
+          }
         }
+        if (stream->cancel.load()) return {agents::Deny, "denied (stopped)"};
+        stream->approvalCv.wait_for(lock, std::chrono::milliseconds(200));
       }
-      if (stream->cancel.load()) return agents::Deny;
-      stream->approvalCv.wait_for(lock, std::chrono::milliseconds(200));
-    }
+    };
+    const auto [decision, why] = decide();
+    auto spec = byName.find(call.name);
+    auditTool(spec != byName.end() ? spec->second.serverName : "?", spec != byName.end() ? spec->second.tool : call.name,
+              call.name, why);
+    return decision;
   };
   const Json pluginContext = pluginSnapshot();
   hooks.invoke = [clients, byName, pluginContext](const agents::Call& call) {

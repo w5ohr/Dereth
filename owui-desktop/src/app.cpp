@@ -314,6 +314,7 @@ void App::init() {
       }
     });
   });
+  auditInit();
   mcpInit();
   pluginsInit();
   refreshPrivateChats();

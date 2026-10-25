@@ -254,6 +254,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   chat and sends the steps one after another as each reply finishes, so the
   whole chain is kept. Run from the tab, the palette ("Run recipe: ...") or
   a daily schedule; three example recipes are one click away.
+- **Audit log:** Tools ▸ Audit lists every outbound request the app made -
+  host, method and path (query strings, headers and bodies are never
+  recorded), status, bytes each way, duration - and every tool-call decision
+  (server, tool, allowed/denied and why), for today, 7 or 30 days or all
+  time, with a per-host summary, a filter, CSV/JSON export and a clear
+  button. Switch it off in the same tab. `Open WebUI --audittest` checks
+  the log offline.
 - **Repo map:** with a project folder pinned, every message carries a
   compact symbol index of the project - one line per file listing the
   classes, functions, methods and types it defines with line numbers

@@ -333,6 +333,7 @@ void App::drawPalette() {
   add("Usage dashboard (Tools > Usage)", "command", [this] { pane = Pane::Tools; });
   add("Export everything to a backup zip", "command", [this] { exportEverything(); });
   add("Run the project's tests until green", "command", [this] { pane = Pane::Tools; testLoopRun(true); });
+  add("Audit log (what left this Mac)", "command", [this] { pane = Pane::Tools; });
   for (const recipes::Recipe& r : recipeList()) {
     const std::string id = r.id;
     add("Run recipe: " + r.name, "recipe - " + std::to_string(r.steps.size()) + " steps", [this, id] { runRecipe(id); });

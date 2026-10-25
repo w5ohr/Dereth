@@ -468,6 +468,12 @@ class App {
   void tickTriggers();
   void drawTriggersSection(float width);
 
+  // --- audit log (audit_pane.cpp) -------------------------------------------
+  void auditInit();                           // net observer + log trim
+  void auditTool(const std::string& server, const std::string& tool, const std::string& qualified,
+                 const std::string& decision);
+  void drawAuditSection(float width);
+
   // --- repo map (code_tools.cpp) --------------------------------------------
   // A symbol index of the project folder, sent with the project context in
   // place of whole files (extra["projectRepoMap"], default on).

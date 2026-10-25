@@ -11,6 +11,9 @@
 namespace net {
 namespace {
 
+std::function<void(const Transfer&)> gObserver;
+std::mutex gObserverMutex;
+
 struct ChunkSink {
   const std::function<bool(const char*, size_t)>* fn = nullptr;
   const std::atomic<bool>* cancel = nullptr;
@@ -105,14 +108,34 @@ CURL* makeHandle(const Request& req, curl_slist** list, curl_mime** mime) {
 }
 
 void finish(CURL* curl, curl_slist* list, curl_mime* mime, Response* res, CURLcode code,
-            bool abortedByCaller) {
+            bool abortedByCaller, const Request* req = nullptr) {
+  Transfer transfer;
   if (curl) {
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
     res->status = status;
+    curl_off_t up = 0, down = 0, total = 0;
+    curl_easy_getinfo(curl, CURLINFO_SIZE_UPLOAD_T, &up);
+    curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD_T, &down);
+    curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME_T, &total);
+    transfer.bytesOut = static_cast<int64_t>(up);
+    transfer.bytesIn = static_cast<int64_t>(down);
+    transfer.ms = static_cast<double>(total) / 1000.0;
+    transfer.status = status;
   }
   if (code != CURLE_OK && !abortedByCaller) {
     res->error = curl_easy_strerror(code);
+  }
+  if (req) {
+    transfer.method = req->method;
+    transfer.url = req->url;
+    transfer.error = res->error;
+    std::function<void(const Transfer&)> observer;
+    {
+      std::lock_guard<std::mutex> lock(gObserverMutex);
+      observer = gObserver;
+    }
+    if (observer) observer(transfer);
   }
   if (mime) curl_mime_free(mime);
   if (list) curl_slist_free_all(list);
@@ -134,6 +157,11 @@ void globalInit() {
   std::call_once(once, [] { curl_global_init(CURL_GLOBAL_DEFAULT); });
 }
 
+void setObserver(std::function<void(const Transfer&)> observer) {
+  std::lock_guard<std::mutex> lock(gObserverMutex);
+  gObserver = std::move(observer);
+}
+
 Response perform(const Request& req) {
   globalInit();
   Response res;
@@ -149,7 +177,7 @@ Response perform(const Request& req) {
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, collectHeader);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &res.headers);
   CURLcode code = curl_easy_perform(curl);
-  finish(curl, list, mime, &res, code, false);
+  finish(curl, list, mime, &res, code, false, &req);
   return res;
 }
 
@@ -188,7 +216,7 @@ Response stream(const Request& req,
   // overall timeout and rely on the low-speed guard instead.
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
   CURLcode code = curl_easy_perform(curl);
-  finish(curl, list, mime, &res, code, sink.aborted);
+  finish(curl, list, mime, &res, code, sink.aborted, &req);
   return res;
 }
 
@@ -254,7 +282,7 @@ Response download(const Request& req, const std::string& destPath) {
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, collectHeader);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &res.headers);
   CURLcode code = curl_easy_perform(curl);
-  finish(curl, list, mime, &res, code, false);
+  finish(curl, list, mime, &res, code, false, &req);
   fclose(f);
   if (!res.ok()) remove(destPath.c_str());
   return res;

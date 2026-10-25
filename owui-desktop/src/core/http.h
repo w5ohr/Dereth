@@ -42,6 +42,18 @@ struct Response {
 
 void globalInit();
 
+// Every finished transfer (any of the calls below) is reported here, from
+// the calling thread. Bodies and headers are not part of it.
+struct Transfer {
+  std::string method;
+  std::string url;
+  long status = 0;
+  int64_t bytesOut = 0, bytesIn = 0;
+  double ms = 0.0;
+  std::string error;
+};
+void setObserver(std::function<void(const Transfer&)> observer);
+
 Response perform(const Request& req);
 
 // Streams the response body. Returning false from onChunk aborts the transfer.

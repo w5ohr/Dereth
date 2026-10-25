@@ -921,3 +921,25 @@ event whose `content` is "" was treated as a replace and could wipe the stream; 
 longer does. That is the likely cause, not a confirmed one: the failing event stream was
 not captured. Known: the header's ctx figure does not count the project block (16k in,
 "~47" shown).
+
+2026-10-24 IX (139 audit log): `src/core/auditlog.{h,cpp}` (JSONL records of kind http -
+host, method, path with query/fragment/credentials stripped, status, bytes out/in, ms,
+ok, error text - or kind tool - server, tool, qualified name, decision; thread-safe
+append; load by range; trim to the newest N lines; byHost; CSV and JSON exports) fed by
+a new `net::setObserver` in the HTTP layer: `finish()` now takes the request and reports
+a `net::Transfer` (CURLINFO_SIZE_UPLOAD_T / SIZE_DOWNLOAD_T / TOTAL_TIME_T) for every
+perform / stream / sse / download, so server calls, direct Ollama, plugin `owui.fetch`
+and MCP-over-HTTP are all covered from one place; MCP / plugin tool approvals are
+recorded in `makeToolHooks` with how they were decided (never / auto-approve / always /
+user / stopped). `src/audit_pane.cpp` is Tools > Audit: on/off (extra["auditLog"]),
+Today / 7 / 30 / All, All / Requests / Tool calls, a text filter, Export CSV / JSON,
+Clear with confirm, a headline ("22 requests to 1 host - 11.4 KB sent, 35.8 KB received
+- 1 tool call") with the top hosts, and a table newest first (time, host, what, status,
+out, in, ms; tool rows in green/red). `--audittest` runs 9 offline checks. Verified
+against a scratch server with qwen3:8b and the calc MCP server: one prompt that called
+the add tool produced 22 request rows (config, auths, chats, models, two /ollama/api/chat
+rounds with 1.7-1.9 KB out / 13-15 KB in, the chat save, title generation) and one tool
+row "tool add - allowed (always)"; the file matched (22 http + 1 tool). Not covered by
+design: the socket.io WebSocket (not curl - the server's push channel, inbound) and MCP
+stdio servers (local processes; their tool decisions are logged). Not exercised: the
+filter box and the export save panels.
