@@ -486,6 +486,8 @@ void App::drawChatPane() {
             } else {
               widgets::loadingRow("loading image");
             }
+          } else if (type == "local_document") {
+            drawLocalDocumentFile(file);
           } else {
             icons::inlineIcon(icons::Icon::Paperclip);
             ImGui::SameLine(0, 4);
@@ -647,6 +649,7 @@ void App::drawChatPane() {
       }
 
       // --- steering chips under the latest answer: one click, no typing
+      if (!isUser && !message.streaming) drawLocalDocumentRefs(message);   // [name p.N] citations
       if (!isUser && !message.streaming && messageId == lastAssistantId && streams_.empty() &&
           message.error.empty()) {
         ImGui::Dummy(ImVec2(0, 4));
@@ -866,8 +869,14 @@ void App::drawChatPane() {
             ImGui::Dummy(ImVec2(56, 56));
           }
         } else {
-          widgets::pill(attachment.name + (attachment.uploading ? " (uploading)" : ""),
-                        palette.panelAlt);
+          std::string suffix;
+          if (attachment.reading) suffix = " (reading)";
+          else if (attachment.uploading) suffix = " (uploading)";
+          else if (attachment.local) suffix = "  -  " + std::to_string(attachment.pages) + (attachment.kind == "pptx" ? " slides" : attachment.kind == "xlsx" ? " sheets" : attachment.kind == "pdf" || attachment.kind == "docx" ? " pages" : " parts");
+          widgets::pill(attachment.name + suffix, palette.panelAlt);
+          if (attachment.local && ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Read on this Mac (%s, %zu characters) - the file is not uploaded; its text goes with the prompt", attachment.kind.c_str(), attachment.chars);
+          }
         }
         ImGui::SameLine();
         if (icons::button("remove", icons::Icon::Close, "Remove")) {

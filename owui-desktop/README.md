@@ -338,6 +338,17 @@ Things a browser tab can't do, plus the workflow features built on top:
   own sidebar section with a lock; redaction, prompt variables, plugins and
   MCP tools work in them as anywhere. `Open WebUI --privatetest` checks the
   store offline.
+- **Documents read on this Mac:** attach a PDF, Word, PowerPoint, Excel, RTF
+  or text file and its text is extracted locally - PDFKit for PDFs, the
+  zipped XML for Office files, textutil for the rest - into pages, slides or
+  sheets, and goes with the prompt instead of being uploaded (a chip says
+  "3 pages, read on this Mac"). Big documents are trimmed to the parts that
+  best match your question. Replies cite "[name p.N]"; those citations
+  become buttons under the reply that open the PDF column on that page.
+  Private chats always read locally; the setting under Chat switches it for
+  server chats, which fall back to an upload for a file with no text (a
+  scan). `owui://attach?path=/file` attaches from a script or Shortcut.
+  `Open WebUI --doctest` checks the extraction offline.
 - **Direct backends:** Settings ▸ Direct backends registers model servers the
   app talks to with no Open WebUI in between - Ollama, anything
   OpenAI-compatible (OpenAI, LM Studio, llama.cpp server, vLLM, OpenRouter,

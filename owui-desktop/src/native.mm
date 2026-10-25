@@ -1164,7 +1164,14 @@ void pdfGoToPage(int page) {
   if (!gPdfView || !gPdfView.document) return;
   const NSInteger index = std::clamp<NSInteger>(page - 1, 0, static_cast<NSInteger>(gPdfView.document.pageCount) - 1);
   PDFPage* target = [gPdfView.document pageAtIndex:static_cast<NSUInteger>(index)];
-  if (target) [gPdfView goToPage:target];
+  if (!target) return;
+  [gPdfView goToPage:target];
+  // Right after a load the view has not laid out yet and the jump is lost
+  // (it lands wherever the layout settles); apply it again once it has.
+  PDFView* view = gPdfView;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (gPdfView == view && view.document == target.document) [view goToPage:target];
+  });
 }
 
 void pdfClearHighlights() {

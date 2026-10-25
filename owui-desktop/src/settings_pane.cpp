@@ -72,6 +72,12 @@ void App::drawSettingsPane() {
   card("chat", [&] {
     ImGui::Checkbox("Stream responses", &cfg.streamResponses);
     ImGui::Checkbox("Enter sends the message", &cfg.sendOnEnter);
+    bool localDocs = cfg.extra.value("localDocuments", true);
+    if (ImGui::Checkbox("Read attached documents on this Mac (PDF, Word, PowerPoint, Excel, text) instead of uploading them", &localDocs)) {
+      cfg.extra["localDocuments"] = localDocs;
+      cfg.save();
+    }
+    widgets::dimText("The text goes with the prompt, page by page, and replies can cite pages. Private chats always read locally.");
     bool artifactAutoOpen = cfg.extra.value("artifactAutoOpen", true);
     if (ImGui::Checkbox("Open the artifact pane when a reply contains HTML or SVG", &artifactAutoOpen)) {
       cfg.extra["artifactAutoOpen"] = artifactAutoOpen;

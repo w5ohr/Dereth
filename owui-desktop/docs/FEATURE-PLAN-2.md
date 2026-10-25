@@ -996,3 +996,39 @@ is self-test only), tool calls through the OpenAI dialect live (converted and un
 not exercised against a model), server chats on a direct backend (out of scope: those are
 the server's), and the keychain path itself (the scratch run uses the file fallback).
 
+2026-10-25 VI (103 native document chat): `src/core/doctext.{h,mm}` (app-free: kindFor;
+extract -> pages with labels - PDFKit page strings for PDF, a zlib-backed zip reader plus
+an XML text walker for docx (pages at Word's lastRenderedPageBreak, else parts of ~3500
+chars) / pptx (one page per slide, numeric order) / xlsx (shared strings resolved, rows as
+tab lines, one page per sheet with its name), textutil via a 0600 temp file for rtf / doc
+/ odt / webarchive, plain text and code as parts, HTML stripped; render fits a document
+into a character budget - whole when it fits, else ~1000-char chunks scored lexically
+against the question (tf x idf over crude 6-letter stems) with the opening chunk always
+kept and a note saying how many parts were shown). `src/local_documents.cpp`: attachBytes
+routes a supported file to attachDocument (worker extraction, cache under
+support/documents/<fnv-hash>.json plus the .pdf bytes for the viewer; message file
+{type: local_document, name, hash, kind, pages, chars}; private chats never upload, server
+chats upload when extraction fails) - the setting extra["localDocuments"] (Chat card,
+default on); buildCompletionPayload prepends one system message with every attached
+document on the branch, each given a share of ~40% of the model's window; user bubbles
+show "name - 3 pages, read on this Mac" (PDF: click opens the column); drawLocalDocumentRefs
+turns [name p.N] / [name slide N] / [p.N] in a reply into a "Cited:" row whose PDF entries
+open the document column at that page ("local:<hash>" in openDocument); pdfGoToPage now
+re-applies the jump 150 ms after a load because the first one was lost to layout.
+`owui://attach?path=` added for scripts and the test harness. `--doctest` runs 14 offline
+checks including a Quartz-drawn two-page PDF. Verified on a scratch server in a private
+chat: a generated 3-page Word report and Apple's 16-page License.pdf attached by the URL
+scheme, chips read "3 pages" / "16 pages", the audit log shows zero file uploads and only
+the Ollama /api/chat calls (35 KB prompt), and the reply cited "[lantern-report.docx p.2]"
+with the right budget figure and "[license.pdf p.7]"; both chips rendered, the PDF one
+opens the column on page 7; the chat reloads with chips intact. Honest notes: in the two-document
+run the model's license citation was off (it said p.7; a stray "terminate" is on p.6 and
+the Termination clause on p.8) - the 80k-char PDF went in as excerpts and "termination"
+did not match "terminate" lexically, so 6-letter stemming was added; a re-run with the
+license alone (49k chars of it sent, every page represented, logged per block under
+OWUI_DEBUG) then quoted "7. Termination. This License is effective until terminated."
+with [license p.8], and the short name still resolved to the chip. docx without
+Word's page-break markers (most generated files) gets "part N" labels not real pages,
+Excel numbers are raw (no formats), textutil formats and the server-chat upload fallback
+were self-test / code-path only.
+

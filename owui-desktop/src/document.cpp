@@ -34,14 +34,19 @@ void App::openDocument(const std::string& fileId, const std::string& name, int p
   }
   documentFileId = fileId;
   documentLoading = true;
-  const std::string path = core::cacheDir() + "/doc-" + fileId + ".pdf";
-  async::run([this, fileId, path, page, passage] {
+  // "local:<hash>" is a document read on this Mac (local_documents.cpp).
+  const bool local = core::startsWith(fileId, "local:");
+  const std::string path = local ? core::supportDir() + "/documents/" + fileId.substr(6) + ".pdf"
+                                 : core::cacheDir() + "/doc-" + fileId + ".pdf";
+  async::run([this, fileId, path, page, passage, local] {
     bool ok = false;
     std::string bytes = core::readFile(path, &ok);
     std::string error;
     if (!ok || bytes.empty()) {
       bytes.clear();
-      if (!api_.fetchBinary("/api/v1/files/" + fileId + "/content", &bytes) || bytes.empty()) {
+      if (local) {
+        error = "The local copy of this document is gone - attach it again";
+      } else if (!api_.fetchBinary("/api/v1/files/" + fileId + "/content", &bytes) || bytes.empty()) {
         error = "Could not download the file";
       } else {
         core::writeFile(path, bytes);

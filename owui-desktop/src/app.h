@@ -103,6 +103,12 @@ struct Attachment {
   bool isImage = false;
   bool uploading = false;
   bool failed = false;
+  // Documents read on this Mac (local_documents.cpp): never uploaded.
+  bool reading = false;
+  bool local = false;
+  std::string hash, kind;
+  int pages = 0;
+  size_t chars = 0;
   Json toJson() const;
 };
 
@@ -292,6 +298,16 @@ class App {
   void deleteChat(const std::string& id);
   void attachFiles(const std::vector<std::string>& paths);
   void attachBytes(const std::string& name, const std::string& mime, const std::string& bytes);
+  void uploadAttachment(size_t index);
+
+  // --- local documents (local_documents.cpp) --------------------------------
+  // PDF / Word / PowerPoint / Excel / text attachments extracted on this Mac
+  // into pages, sent with the prompt, cited as [name p.N].
+  void attachDocument(size_t index);
+  Json localDocumentMessage(const std::vector<std::string>& messageIds, const std::string& model, const std::string& query);
+  void drawLocalDocumentFile(const Json& file);
+  void drawLocalDocumentRefs(const Message& message);
+  void openLocalDocument(const std::string& hash, const std::string& name, int page);
   void speak(const std::string& text);
   void rateMessage(const std::string& messageId, int rating);
   // Edit > Paste lands here first: an image on the pasteboard (and no text)

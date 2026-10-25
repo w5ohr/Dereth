@@ -8,6 +8,7 @@
 
 #include "core/async.h"
 #include "core/common.h"
+#include "core/doctext.h"
 #include "core/keychain.h"
 #include "core/store.h"
 #include "imgui_internal.h"
@@ -51,6 +52,9 @@ const NavItem kNav[] = {
 // ---------------------------------------------------------------- data model
 
 Json Attachment::toJson() const {
+  if (local) {
+    return Json{{"type", "local_document"}, {"name", name}, {"hash", hash}, {"kind", kind}, {"pages", pages}, {"chars", chars}};
+  }
   Json j{
       {"type", isImage ? "image" : "file"},
       {"name", name},
@@ -632,23 +636,33 @@ void App::attachBytes(const std::string& name, const std::string& mime, const st
     attachment.dataUrl = "data:" + mime + ";base64," + core::base64Encode(bytes);
   }
   attachments.push_back(attachment);
+  if (attachment.isImage) return;
 
-  if (!attachment.isImage) {
-    const size_t index = attachments.size() - 1;
-    async::run([this, index, name, mime, bytes] {
-      api::Result res = api_.uploadFile(name, mime, bytes);
-      async::post([this, index, res, name] {
-        if (index >= attachments.size()) return;
-        attachments[index].uploading = false;
-        if (res.ok && res.data.contains("id")) {
-          attachments[index].id = res.data["id"];
-        } else {
-          attachments[index].failed = true;
-          widgets::toastError("Upload failed for " + name + ": " + api::errorMessage(res));
-        }
-      });
+  // Documents are read on this Mac unless the setting says to upload them;
+  // a private chat never uploads.
+  const size_t index = attachments.size() - 1;
+  const bool readLocally = doctext::supported(name, mime) && (chat.isPrivate || settings().extra.value("localDocuments", true));
+  if (readLocally) attachDocument(index);
+  else uploadAttachment(index);
+}
+
+void App::uploadAttachment(size_t index) {
+  if (index >= attachments.size()) return;
+  attachments[index].uploading = true;
+  const std::string name = attachments[index].name, mime = attachments[index].mime, bytes = attachments[index].bytes;
+  async::run([this, index, name, mime, bytes] {
+    api::Result res = api_.uploadFile(name, mime, bytes);
+    async::post([this, index, res, name] {
+      if (index >= attachments.size()) return;
+      attachments[index].uploading = false;
+      if (res.ok && res.data.contains("id")) {
+        attachments[index].id = res.data["id"];
+      } else {
+        attachments[index].failed = true;
+        widgets::toastError("Upload failed for " + name + ": " + api::errorMessage(res));
+      }
     });
-  }
+  });
 }
 
 Json App::buildCompletionPayload(const std::string& assistantId, const std::string& model) {
@@ -692,6 +706,20 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
       entry["content"] = message.content;
     }
     messages.push_back(entry);
+  }
+  // Documents read on this Mac ride along as a system message, fitted to the
+  // window and chosen for the latest question when they are too big.
+  {
+    std::string lastUser;
+    for (auto it = messageIds.rbegin(); it != messageIds.rend(); ++it) {
+      const Message& m = chat.messages.at(*it);
+      if (m.role == "user") {
+        lastUser = m.content;
+        break;
+      }
+    }
+    const Json docs = localDocumentMessage(messageIds, model, lastUser);
+    if (!docs.is_null()) messages.insert(messages.begin(), docs);
   }
   // Continuing a reply: the text so far closes the list as the assistant's
   // open turn, so the model carries on from it instead of answering afresh.
@@ -1001,7 +1029,7 @@ void App::sendMessage(const std::string& textIn) {
   }
   for (const Attachment& attachment : attachments) {
     if (attachment.uploading) {
-      widgets::toastInfo("Still uploading an attachment...");
+      widgets::toastInfo(attachment.reading ? "Still reading an attachment..." : "Still uploading an attachment...");
       return;
     }
   }

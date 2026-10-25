@@ -274,6 +274,11 @@ void App::handleOpenUrl(const std::string& url) {
     openChat(path.substr(5));
   } else if (path == "quick") {
     openQuickAsk(params["prompt"]);
+  } else if (path == "attach") {   // owui://attach?path=/abs/file - into the open chat's composer
+    if (params.count("path") && !params["path"].empty()) {
+      attachFiles({params["path"]});
+      pane = Pane::Chat;
+    }
   } else {
     widgets::toastInfo("Unknown link: " + url);
   }
