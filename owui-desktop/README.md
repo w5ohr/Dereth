@@ -186,6 +186,14 @@ Things a browser tab can't do, plus the workflow features built on top:
   the match shortens the passage from the front until it finds it). Page
   controls, "Find passage again", the excerpt popup and "Open in Preview";
   files are cached under the app's cache folder.
+- **Structured output:** the braces icon in the chat header takes a JSON
+  schema for the chat (or a starting point: list of records, classification,
+  key facts, or one inferred from an example). Every reply is requested in
+  that shape (`response_format`, which Open WebUI maps to Ollama's `format`),
+  checked locally against the schema, and shown as a table, tree or JSON with
+  a one-click copy; a reply that breaks the schema is sent back to the model
+  with the violations, up to three times, before it is shown with them
+  listed. `Open WebUI --schematest` runs the validator's offline checks.
 - **Sampling panel:** the gear in the chat header sets this chat's generation
   parameters - temperature, top-p, top-k, min-p, repeat penalty, max tokens,
   context size (with the model's reported window), a lockable seed with

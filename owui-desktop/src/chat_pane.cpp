@@ -96,7 +96,7 @@ void App::drawChatPane() {
     ImGui::PopStyleColor();
 
     // Right-hand actions.
-    const float actionsWidth = 370.0f;
+    const float actionsWidth = 407.0f;
     ImGui::SameLine(ImGui::GetWindowWidth() - actionsWidth);
     if (!streams_.empty()) {
       widgets::spinner("##busy", 8.0f, 2.0f);
@@ -151,6 +151,12 @@ void App::drawChatPane() {
       ImGui::OpenPopup("##chatparams");
     }
     drawSamplingPanel();
+    ImGui::SameLine();
+    if (icons::button("structured", icons::Icon::Code, "Structured output (JSON schema)", 0.0f,
+                      structuredEnabled() ? palette.accent : 0)) {
+      ImGui::OpenPopup("##structured");
+    }
+    drawStructuredPanel();
     ImGui::SameLine();
     if (icons::button("chatmenu", icons::Icon::Menu, "More")) ImGui::OpenPopup("##chatmore");
     if (ImGui::BeginPopup("##chatmore")) {
@@ -500,6 +506,9 @@ void App::drawChatPane() {
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) message.editing = false;
+      } else if (!isUser && !message.streaming && structuredEnabled() &&
+                 drawStructuredValue(message, contentWidth)) {
+        // Drawn as a table, tree or JSON by the structured-output card.
       } else if (settings().renderMarkdown && !isUser) {
         md::Options options;
         options.wrapWidth = contentWidth;

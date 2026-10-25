@@ -139,11 +139,20 @@ struct Message {
   Json followUps = Json::array();
   std::vector<ToolCall> toolCalls;
   bool streaming = false;
+  // Streaming through the server (socket path): the placeholder is saved
+  // with its parentId up front, since the server fills that record itself.
+  bool serverStream = false;
   int rating = 0;               // 1 thumbs up, -1 thumbs down
   bool showReasoning = false;
   bool showRaw = false;
   bool editing = false;
   std::string editBuffer;
+  // Structured output: the JSON pulled out of the reply and its verdict
+  // against the chat's schema (filled lazily; not saved - re-checked on load).
+  Json structuredValue;
+  std::vector<std::string> structuredErrors;
+  bool structuredChecked = false;
+  int structuredView = 0;       // 0 table (or tree when nested), 1 tree, 2 JSON
 
   Json toJson() const;
   static Message fromJson(const Json& j);
@@ -265,7 +274,8 @@ class App {
   void regenerate(const std::string& assistantMessageId);
   void editAndResend(const std::string& userMessageId, const std::string& newText);
   void stopAllStreams();
-  void saveActiveChat();
+  void saveActiveChat(std::function<void()> then = {});   // `then` runs on the UI thread afterwards
+  bool serverDrivenStream() const;       // will the next reply stream through the server?
   void deleteChat(const std::string& id);
   void attachFiles(const std::vector<std::string>& paths);
   void attachBytes(const std::string& name, const std::string& mime, const std::string& bytes);
@@ -401,6 +411,21 @@ class App {
   // --- sampling panel (sampling.cpp) ----------------------------------------
   void drawSamplingPanel();              // the "##chatparams" popup body
   bool hasSamplingParams() const;        // anything set besides the system prompt
+
+  // --- structured output (structured.cpp) -----------------------------------
+  // A JSON schema for this chat: the request asks for it, the reply is checked
+  // against it, shown as a table or tree, and re-asked on a violation. The
+  // configuration is chat.raw["structuredOutput"], saved with the chat.
+  Json& structuredConfig();
+  bool structuredEnabled() const;
+  Json structuredSchema() const;               // parsed; null when off or broken
+  std::string structuredName() const;
+  void drawStructuredPanel();                  // the "##structured" popup body
+  void checkStructured(Message& message);      // extract + validate a finished reply
+  bool reaskStructured(const std::string& assistantId);   // true when a retry started
+  bool drawStructuredValue(Message& message, float width); // true when it drew the body
+  std::map<std::string, int> structuredRetries;           // per user-message id
+  std::map<std::string, std::string> structuredHints;     // violations for the retry prompt
 
   // --- fan-out (fanout.cpp) -------------------------------------------------
   // One prompt to several models at once; the answers sit side by side until

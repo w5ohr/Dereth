@@ -423,3 +423,35 @@ opened at 560x760. Not delivered from the items' wording: a sidebar pencil on ch
 with a draft, ⌃R fuzzy history search, a rendered callout for the quote (it is a
 plain `>` block), URL paste offers (fetch/summarise), the Translate/ELI5 chips
 (Simpler covers ELI5).
+
+2026-10-24 I (58 structured output mode): `src/core/jsonschema.{h,cpp}` (a draft
+2020-12 subset validator with path-qualified messages, `check` for the schema itself,
+`infer` from an example, `extractJson` for bare / fenced / embedded JSON) and
+`src/structured.cpp` (panel, verdict, re-ask, table/tree/JSON card). The schema lives
+in the chat document (`chat.raw["structuredOutput"]`: enabled, name, schema text,
+maxRetries) so it rides along with the chat on the server. The request carries
+`response_format: {type: json_schema, json_schema: {name, schema}}` - Open WebUI
+passes it to OpenAI-style backends and converts it to Ollama's `format` - plus a
+system message spelling the schema out; after a violation the errors are appended
+to that note and the reply regenerated as a sibling (the retry becomes the branch via
+`fanout_kept`, the rejected one stays reachable with the sibling arrows). The card
+replaces the markdown body: records -> table (union of keys, 200 rows / 12 columns
+cap), flat object -> field/value table, scalars -> numbered list, nested -> tree;
+JSON view and "Copy JSON" always. `--schematest` runs 50 offline checks (all pass).
+Verified against a scratch server with qwen3:8b: the Classification starter produced
+pure JSON rendered as a field/value table with "Matches schema"; List of records gave
+a four-row table, Tree and JSON views switched; a uniqueItems schema with the prompt
+"Set nums to [7, 7, 7] exactly" was rejected ("$.nums[1]: duplicate item"), re-asked
+once and came back [7, 8, 9] as 2/2; the configuration round-tripped through
+GET /chats/{id}. Fixed on the way: a regenerated reply (any regenerate, not only the
+re-ask) lost its parentId on reload - the server creates the reply's record itself
+when the task starts, unlinked, and keeps its own done:false copy over the client's
+later saves - so `regenerate` and `sendMessage` now save the placeholder with its
+parentId first (`Message::serverStream`, `saveActiveChat(then)`) and start the
+stream from the save's continuation; the header's right-hand group was 37 pt too
+narrow for the extra icon. Not exercised in the GUI: the violation card on the
+rejected sibling (the user had the machine, so the last screenshots were skipped) -
+its renderer is the same `drawStructuredValue` path. Not delivered: a schema library
+across chats, `pattern`-constrained generation (Ollama's grammar ignores some
+keywords - the validator catches them and re-asks), the MCP tool-loop path (direct
+Ollama, no `format` yet).

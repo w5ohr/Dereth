@@ -171,7 +171,7 @@ Json ChatDoc::toJson() const {
   // that are still streaming are therefore left out until they finish.
   std::set<std::string> omitted;
   for (const auto& [id, message] : messages) {
-    if (message.streaming) omitted.insert(id);
+    if (message.streaming && !message.serverStream) omitted.insert(id);
   }
   std::string current = currentId;
   while (!current.empty() && omitted.count(current)) current = messages.at(current).parentId;
@@ -657,6 +657,28 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
     messages.insert(messages.begin(), Json{{"role", "system"}, {"content", projectBlock}});
   }
 
+  // Structured output: the schema goes to the backend as `response_format`
+  // (Open WebUI hands it to OpenAI-style servers as is and turns it into
+  // Ollama's `format`) and is spelled out in a system message for models that
+  // only follow the prompt. After a violation the errors ride along too.
+  Json responseFormat;
+  if (structuredEnabled()) {
+    const Json schema = structuredSchema();
+    if (!schema.is_null()) {
+      responseFormat = Json{{"type", "json_schema"},
+                            {"json_schema", Json{{"name", structuredName()}, {"schema", schema}}}};
+      std::string note =
+          "Reply with a single JSON value that matches this JSON schema, and nothing else - "
+          "no prose before or after it, no code fence:\n" + schema.dump(2);
+      auto hint = structuredHints.find(assistant.parentId);
+      if (hint != structuredHints.end()) {
+        note += "\n\nYour previous reply was rejected because: " + hint->second +
+                "\nFix every point and reply with JSON only.";
+      }
+      messages.insert(messages.begin(), Json{{"role", "system"}, {"content", note}});
+    }
+  }
+
   Json payload{
       {"stream", settings().streamResponses},
       {"model", model},
@@ -676,6 +698,7 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
   if (!fileRefs.empty()) payload["files"] = fileRefs;
   if (!activeToolIds.empty()) payload["tool_ids"] = activeToolIds;
   if (!chat.params.empty()) payload["params"] = chat.params;
+  if (!responseFormat.is_null()) payload["response_format"] = responseFormat;
   return payload;
 }
 
@@ -746,6 +769,11 @@ static void addLocalIndexHits(App* app, Json* payload, const std::string& query)
   if (messages.is_array()) {
     messages.insert(messages.begin(), Json{{"role", "system"}, {"content", block}});
   }
+}
+
+bool App::serverDrivenStream() const {
+  if (mcpEnabled && !mcpToolSpecs().empty()) return false;   // tool loop talks to Ollama directly
+  return socket_.connected() && !chat.id.empty();
 }
 
 void App::startStream(const std::string& assistantId, const std::string& model) {
@@ -917,6 +945,7 @@ void App::sendMessage(const std::string& text) {
     }
     assistant.timestamp = core::nowSeconds();
     assistant.streaming = true;
+    assistant.serverStream = !chat.id.empty() && serverDrivenStream();
     chat.messages[user.id].childrenIds.push_back(assistant.id);
     chat.messages[assistant.id] = assistant;
     pending.emplace_back(assistant.id, model);
@@ -946,8 +975,11 @@ void App::sendMessage(const std::string& text) {
       });
     });
   } else {
-    saveActiveChat();
-    for (const auto& [assistantId, model] : pending) startStream(assistantId, model);
+    saveActiveChat([this, pending] {
+      for (const auto& [assistantId, model] : pending) {
+        if (chat.messages.count(assistantId)) startStream(assistantId, model);
+      }
+    });
   }
 }
 
@@ -976,11 +1008,17 @@ void App::regenerate(const std::string& assistantMessageId) {
   }
   assistant.timestamp = core::nowSeconds();
   assistant.streaming = true;
+  assistant.serverStream = serverDrivenStream();
   chat.messages[parentId].childrenIds.push_back(assistant.id);
   chat.messages[assistant.id] = assistant;
   chat.currentId = assistant.id;
   scrollToBottom = true;
-  startStream(assistant.id, model);
+  // The server creates the reply's record itself when the task starts, with
+  // no parent; saving the linked placeholder first keeps the thread intact.
+  const std::string assistantId = assistant.id;
+  saveActiveChat([this, assistantId, model] {
+    if (chat.messages.count(assistantId)) startStream(assistantId, model);
+  });
 }
 
 void App::editAndResend(const std::string& userMessageId, const std::string& newText) {
@@ -1120,6 +1158,18 @@ void App::pollStreams() {
 void App::afterCompletion(const std::string& assistantId) {
   auto it = chat.messages.find(assistantId);
   if (it == chat.messages.end()) return;
+
+  // Structured output: judge the reply now; a violation goes straight back
+  // to the model (a sibling reply, so the rejected one stays visible).
+  if (structuredEnabled() && it->second.error.empty()) {
+    checkStructured(it->second);
+    if (it->second.structuredErrors.empty()) {
+      structuredHints.erase(it->second.parentId);
+      structuredRetries.erase(it->second.parentId);
+    } else if (reaskStructured(assistantId)) {
+      return;
+    }
+  }
   const Message& message = it->second;
 
   if (!message.error.empty()) {
@@ -1183,8 +1233,11 @@ void App::afterCompletion(const std::string& assistantId) {
   }
 }
 
-void App::saveActiveChat() {
-  if (chat.id.empty()) return;
+void App::saveActiveChat(std::function<void()> then) {
+  if (chat.id.empty()) {
+    if (then) then();
+    return;
+  }
   const std::string id = chat.id;
   const Json body = chat.toJson();
   for (const auto& [mid, message] : chat.messages) {
@@ -1193,8 +1246,9 @@ void App::saveActiveChat() {
                    message.streaming ? 1 : 0, message.toolCalls.size());
   }
   const int64_t base = chat.updatedAt;
-  async::run([this, id, body, base] {
+  async::run([this, id, body, base, then] {
     api::Result res = api_.updateChat(id, body);
+    if (then) async::post(then);
     if (res.ok) {
       store::putChat(res.data);
       return;

@@ -430,11 +430,13 @@ static void buildMenuBar() {
 
 int runSelfTest();
 int runMcpSelfTest(int argc, const char* argv[]);
+int runSchemaSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--selftest") return runSelfTest();
     if (std::string(argv[i]) == "--mcptest") return runMcpSelfTest(argc, argv);
+    if (std::string(argv[i]) == "--schematest") return runSchemaSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {
