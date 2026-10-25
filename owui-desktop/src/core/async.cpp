@@ -10,15 +10,33 @@
 namespace async {
 namespace {
 
-std::vector<std::thread> gWorkers;
-std::deque<std::function<void()>> gJobs;
-std::mutex gJobMutex;
-std::condition_variable gJobCv;
+// The pool's state lives in a heap object that is never destroyed. A
+// std::vector<std::thread> with static storage aborts the process at exit
+// (std::terminate) if any worker is still joinable - which is what happened
+// when a code path returned from main() without calling shutdown(). Leaked
+// on purpose, the threads and the queues they wait on stay valid until the
+// process is gone; shutdown() still stops and joins them when it is called.
+struct State {
+  std::vector<std::thread> workers;
+  std::deque<std::function<void()>> jobs;
+  std::mutex jobMutex;
+  std::condition_variable jobCv;
+  std::deque<std::function<void()>> mainQueue;
+  std::mutex mainMutex;
+};
+State& state() {
+  static State* s = new State();
+  return *s;
+}
 std::atomic<bool> gRunning{false};
 std::atomic<int> gPending{0};
 
-std::deque<std::function<void()>> gMainQueue;
-std::mutex gMainMutex;
+#define gWorkers (state().workers)
+#define gJobs (state().jobs)
+#define gJobMutex (state().jobMutex)
+#define gJobCv (state().jobCv)
+#define gMainQueue (state().mainQueue)
+#define gMainMutex (state().mainMutex)
 
 void workerLoop() {
   while (true) {
@@ -90,5 +108,12 @@ void drain() {
 }
 
 int pendingJobs() { return gPending.load(); }
+
+#undef gWorkers
+#undef gJobs
+#undef gJobMutex
+#undef gJobCv
+#undef gMainQueue
+#undef gMainMutex
 
 }  // namespace async

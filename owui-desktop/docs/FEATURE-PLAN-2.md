@@ -2123,3 +2123,31 @@ blank boxes - fixed by dropping modifiers and drawing indicator letters. Not cov
 real sequence shaping (ZWJ families, flags, keycaps, skin tones would need a shaper
 such as Core Text line layout), FreeType (not installed; Core Text does the colour
 work and stb the rest), and Retina density beyond what ImGui already does.
+
+2026-10-25 150 (CI) - partial: build + every self-test on a macOS runner; GUI driving and
+screenshot diffs not done. `scripts/selftests.sh`: discovers the `--*test` flags in
+src/main.mm (58 today), runs each with HOME set to a throwaway folder under
+build/selftest-homes (not the system temp folder - the script sandbox allows writes
+there by design, which made scripttest's "writes outside the working folder are denied"
+check pass a write it should have caught), OWUI_NO_KEYCHAIN=1 and a watchdog
+(default 90 s, CI 180 s); status ok / FAIL / TIMEOUT / NO SUMMARY from the exit code and
+the "N passed, M failed" line; first FAIL lines echoed; logs in build/selftest-logs;
+a Markdown table to $GITHUB_STEP_SUMMARY; `--only`, `--skip`, `--timeout`; non-zero exit
+on any failure. `--selftest` (the integration suite) is skipped unless OWUI_SERVER is
+set, and a "selftest-offline" check runs instead: against an unreachable server it must
+exit 1. `.github/workflows/owui-desktop.yml`: push to main / pull_request with a path
+filter on owui-desktop/** and itself, read-only token, per-ref concurrency, macos-15,
+toolchain report, Release configure + build, the runner script, logs uploaded as an
+artifact. Found by the first local run and fixed in the same change: `--selftest`
+aborted at exit (SIGABRT, exit 134) whenever it returned early - the async worker pool
+was a static std::vector<std::thread>, still joinable when static destructors ran, so
+std::terminate fired; the pool's state (threads, queues, mutexes) now lives in a heap
+object that is never destroyed (explicit shutdown() still joins), so no exit path can
+abort. Verified locally: before the fix the installed build exited 134 with an
+unreachable server, after it 1; the runner reported 57 of 57 offline self-tests passing
+plus the offline check, and with a scratch Open WebUI 0.12.3 (OWUI_SERVER + OWUI_TOKEN)
+the integration suite passed 65/65. The first hosted run's result is recorded below
+when it is known. Not covered: driving the GUI and diffing screenshots on the runner
+(hosted macOS runners have no Docker for a scratch server, and Metal / WindowServer
+availability there is unverified), and Homebrew-only tools (pyright etc.) the live
+tests skip when absent.

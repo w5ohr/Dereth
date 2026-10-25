@@ -824,6 +824,17 @@ Things a browser tab can't do, plus the workflow features built on top:
   base emoji shows), a family shows its members side by side and a flag
   shows its two letters (GB). `Open WebUI --emojitest` builds a real atlas
   and checks which font each character comes from and its colour.
+- **CI:** `.github/workflows/owui-desktop.yml` builds the app on a GitHub
+  macOS runner for every push to main and every pull request that touches
+  `owui-desktop/`, then runs `scripts/selftests.sh`, which finds every
+  `--<name>test` flag in `src/main.mm` and runs each in a throwaway HOME with
+  the keychain off and a time limit, printing a table (and writing it to
+  the job summary). Run it locally the same way after a build:
+  `scripts/selftests.sh` (add `--only name,name` or `--skip name`). The
+  integration suite `--selftest` needs a live Open WebUI, so it runs only
+  when `OWUI_SERVER` (and `OWUI_TOKEN`, or `OWUI_EMAIL` + `OWUI_PASSWORD`)
+  is set; otherwise a check that it exits cleanly without a server runs in
+  its place.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

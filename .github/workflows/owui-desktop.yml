@@ -1,0 +1,61 @@
+name: owui-desktop
+
+# Builds the native Open WebUI desktop client (owui-desktop/) on a macOS
+# runner and runs every `--<name>test` self-test the app has (scripts/selftests.sh
+# finds them in src/main.mm). The integration suite (`--selftest`) needs a live
+# Open WebUI server, which a hosted macOS runner can't run (no Docker), so it
+# is skipped there and a regression check runs in its place: without a server
+# the suite must fail cleanly with exit 1, not abort at exit.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'owui-desktop/**'
+      - '.github/workflows/owui-desktop.yml'
+  pull_request:
+    paths:
+      - 'owui-desktop/**'
+      - '.github/workflows/owui-desktop.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owui-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: owui-desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          cmake --version | head -1
+          echo "clangd: $(command -v clangd || echo none)"
+          echo "python3: $(command -v python3) $(python3 --version 2>&1)"
+          echo "jq: $(command -v jq || echo none)"
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Self-tests
+        run: scripts/selftests.sh --timeout 180
+
+      - name: Self-test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owui-desktop-selftest-logs
+          path: owui-desktop/build/selftest-logs
+          if-no-files-found: ignore
