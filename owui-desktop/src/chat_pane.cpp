@@ -146,56 +146,11 @@ void App::drawChatPane() {
       });
     }
     ImGui::SameLine();
-    if (icons::button("chatparams", icons::Icon::Gear, "Chat settings")) {
+    if (icons::button("chatparams", icons::Icon::Gear, "Sampling and system prompt", 0.0f,
+                      hasSamplingParams() ? palette.accent : 0)) {
       ImGui::OpenPopup("##chatparams");
     }
-    if (ImGui::BeginPopup("##chatparams")) {
-      ImGui::TextUnformatted("System prompt");
-      std::string system = chat.params.value("system", "");
-      ImGui::SetNextItemWidth(360);
-      if (ImGui::InputTextMultiline("##system", &system, ImVec2(360, 70))) {
-        if (system.empty()) {
-          chat.params.erase("system");
-        } else {
-          chat.params["system"] = system;
-        }
-      }
-      // Each control writes its key only while it is switched on, so the
-      // server keeps its own defaults for everything left alone.
-      auto numberOption = [this](const char* key, const char* label, float minimum,
-                                 float maximum, float fallback) {
-        bool enabled = chat.params.contains(key);
-        float value = enabled ? chat.params.value(key, fallback) : fallback;
-        ImGui::PushID(key);
-        if (ImGui::Checkbox("##on", &enabled)) {
-          if (enabled) {
-            chat.params[key] = value;
-          } else {
-            chat.params.erase(key);
-          }
-        }
-        ImGui::SameLine();
-        ImGui::BeginDisabled(!enabled);
-        ImGui::SetNextItemWidth(220);
-        if (ImGui::SliderFloat(label, &value, minimum, maximum) && enabled) {
-          chat.params[key] = value;
-        }
-        ImGui::EndDisabled();
-        ImGui::PopID();
-      };
-      numberOption("temperature", "Temperature", 0.0f, 2.0f, 0.8f);
-      numberOption("top_p", "Top p", 0.0f, 1.0f, 0.9f);
-      numberOption("top_k", "Top k", 1.0f, 100.0f, 40.0f);
-      numberOption("max_tokens", "Max tokens", 64.0f, 8192.0f, 2048.0f);
-      ImGui::Separator();
-      if (ImGui::Button("Reset", ImVec2(100, 0))) chat.params = Json::object();
-      ImGui::SameLine();
-      if (widgets::primaryButton("Done", ImVec2(100, 0))) {
-        saveActiveChat();
-        ImGui::CloseCurrentPopup();
-      }
-      ImGui::EndPopup();
-    }
+    drawSamplingPanel();
     ImGui::SameLine();
     if (icons::button("chatmenu", icons::Icon::Menu, "More")) ImGui::OpenPopup("##chatmore");
     if (ImGui::BeginPopup("##chatmore")) {

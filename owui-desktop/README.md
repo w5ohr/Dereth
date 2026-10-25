@@ -161,6 +161,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Sampling panel:** the gear in the chat header sets this chat's generation
+  parameters - temperature, top-p, top-k, min-p, repeat penalty, max tokens,
+  context size (with the model's reported window), a lockable seed with
+  Reroll, stop sequences and the system prompt - with Precise / Balanced /
+  Creative / Deterministic quick presets and "Save as preset". Each knob is
+  only sent while switched on; the values are stored in the chat under Open
+  WebUI's own names, so the web UI sees them too.
 - **Fan-out:** the branch icon in the composer sends one prompt to several
   models at once (the set is remembered). Their answers stream side by side
   with timing and tok/s; "Keep" continues the conversation from that answer,

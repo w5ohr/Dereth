@@ -358,6 +358,10 @@ class App {
   // Fills `chats` from the mirror when the server can't be reached.
   void loadChatsFromMirror(bool archived);
 
+  // --- sampling panel (sampling.cpp) ----------------------------------------
+  void drawSamplingPanel();              // the "##chatparams" popup body
+  bool hasSamplingParams() const;        // anything set besides the system prompt
+
   // --- fan-out (fanout.cpp) -------------------------------------------------
   // One prompt to several models at once; the answers sit side by side until
   // one is kept as the branch the conversation continues from.

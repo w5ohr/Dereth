@@ -331,3 +331,16 @@ mouseDown:` now feeds ImGui a release after the loop returns. Also: mouse-moved 
 are kept on while a native view is first responder, ImGui keyboard navigation is off
 while the composer has focus (the monitor feeds it the typed keys too), and
 `drawInMTKView` refreshes the pointer position from the window each frame.
+
+2026-10-24 I (71 sampling panel): `src/sampling.cpp` replaces the small chat-settings
+popup. Per-chat `chat.params` under Open WebUI's key names (temperature, top_p, top_k,
+min_p, repeat_penalty, max_tokens, num_ctx, seed, stop, system); each knob has a switch
+so untouched keys stay absent and the server keeps its defaults; context size hints the
+model's reported window; the seed switch is the lock (Reroll draws a new one); stop
+sequences one per line; quick presets Precise / Balanced / Creative / Deterministic
+(temperature 0 + seed 42); "Save as preset" feeds the existing presets; changes save the
+chat as they are made. The gear in the header is tinted when anything besides the system
+prompt is set. The tool loop's `ollamaOptionsFromParams` already maps these keys for
+MCP turns. Verified in the GUI: the panel opened and rendered every control (status
+below). Not driven: a send with the knobs set (the params ride in the completion
+payload exactly as before this change).
