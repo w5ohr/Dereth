@@ -154,6 +154,10 @@ void App::drawChatPane() {
     ImGui::SameLine();
     if (icons::button("chatmenu", icons::Icon::Menu, "More")) ImGui::OpenPopup("##chatmore");
     if (ImGui::BeginPopup("##chatmore")) {
+      if (ImGui::MenuItem("Open in new window", "Shift+Cmd+N")) openChatInNewWindow(chat.id, false);
+      if (ImGui::MenuItem("Open as floating mini window")) openChatInNewWindow(chat.id, true);
+      if (ImGui::MenuItem(floating ? "Stop floating on top" : "Float on top", "Shift+Cmd+T")) toggleFloating();
+      ImGui::Separator();
       if (ImGui::MenuItem("Download chat as JSON") && !chat.id.empty()) {
         const std::string path = platform::saveFile(chat.title + ".json");
         if (!path.empty()) {

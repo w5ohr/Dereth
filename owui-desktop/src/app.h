@@ -358,6 +358,17 @@ class App {
   // Fills `chats` from the mirror when the server can't be reached.
   void loadChatsFromMirror(bool archived);
 
+  // --- windows (windows.cpp) -------------------------------------------------
+  // A second window is a second instance started with --chat (and --mini for
+  // a compact window that floats above other apps).
+  void openChatInNewWindow(const std::string& chatId, bool mini);
+  void toggleFloating();
+  void applyWindowMode();                // once the window exists: mini size, float, cascade
+  std::string startChatId;               // from --chat; opened once signed in
+  bool miniWindow = false;               // --mini
+  bool secondaryInstance = false;        // --chat/--mini: no hotkeys, no settings writes
+  bool floating = false;
+
   // --- screen capture (capture.cpp) -----------------------------------------
   // Runs the system capture UI (interactive: drag a region or pick a window;
   // otherwise the whole screen), attaches the shot and its recognised text.

@@ -244,6 +244,23 @@ static void injectChord(ImGuiKey key, bool shift = false) {
   app::App::instance().captureScreenToChat(true);
 }
 
+- (void)toggleFloating:(id)sender {
+  (void)sender;
+  app::App::instance().toggleFloating();
+}
+
+- (void)openChatInNewWindow:(id)sender {
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.openChatInNewWindow(app.chat.id, false);
+}
+
+- (void)openMiniWindow:(id)sender {
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.openChatInNewWindow(app.chat.id, true);
+}
+
 - (void)findInChat:(id)sender {
   (void)sender;
   app::App& app = app::App::instance();
@@ -324,6 +341,11 @@ static void buildMenuBar() {
   [fileMenu addItemWithTitle:@"New Chat" action:@selector(newChat:) keyEquivalent:@"n"];
   [fileMenu addItemWithTitle:@"Quick Ask" action:@selector(quickAsk:) keyEquivalent:@"j"];
   {
+    NSMenuItem* item = [fileMenu addItemWithTitle:@"Open Chat in New Window" action:@selector(openChatInNewWindow:) keyEquivalent:@"n"];
+    item.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [fileMenu addItemWithTitle:@"Open Chat as Floating Mini Window" action:@selector(openMiniWindow:) keyEquivalent:@""];
+  }
+  {
     NSMenuItem* capture = [fileMenu addItemWithTitle:@"Capture Screen to Chat"
                                               action:@selector(captureScreen:)
                                        keyEquivalent:@"2"];
@@ -380,6 +402,10 @@ static void buildMenuBar() {
   }
   [viewMenu addItem:[NSMenuItem separatorItem]];
   [viewMenu addItemWithTitle:@"Toggle Sidebar" action:@selector(toggleSidebar:) keyEquivalent:@"b"];
+  {
+    NSMenuItem* item = [viewMenu addItemWithTitle:@"Float on Top" action:@selector(toggleFloating:) keyEquivalent:@"t"];
+    item.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+  }
   [viewMenu addItemWithTitle:@"Compare Answers" action:@selector(toggleCompare:) keyEquivalent:@"d"];
   [viewMenu addItemWithTitle:@"Pinned Messages" action:@selector(togglePins:) keyEquivalent:@"i"];
   [viewMenu addItemWithTitle:@"What Was Sent" action:@selector(showInspector:) keyEquivalent:@"e"];
@@ -405,6 +431,17 @@ int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--selftest") return runSelfTest();
     if (std::string(argv[i]) == "--mcptest") return runMcpSelfTest(argc, argv);
+  }
+  // A chat in its own window is another instance started with these flags.
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--chat" && i + 1 < argc) {
+      app::App::instance().startChatId = argv[++i];
+      app::App::instance().secondaryInstance = true;
+    } else if (arg == "--mini") {
+      app::App::instance().miniWindow = true;
+      app::App::instance().secondaryInstance = true;
+    }
   }
   @autoreleasepool {
     net::globalInit();

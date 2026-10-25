@@ -1091,3 +1091,55 @@ int pdfHighlight(const std::string& passage, int preferredPage) {
 }
 
 }  // namespace native
+
+// ---------------------------------------------------------------- windows
+
+namespace native {
+
+bool openNewInstance(const std::vector<std::string>& args) {
+  // NSWorkspace rather than `open -n`: the new instance inherits this one's
+  // environment (OWUI_SERVER / OWUI_TOKEN overrides included) and arguments.
+  NSWorkspaceOpenConfiguration* config = [NSWorkspaceOpenConfiguration configuration];
+  config.createsNewApplicationInstance = YES;
+  config.activates = YES;
+  config.environment = NSProcessInfo.processInfo.environment;
+  NSMutableArray* arguments = [NSMutableArray array];
+  for (const std::string& a : args) [arguments addObject:toNs(a)];
+  config.arguments = arguments;
+  [[NSWorkspace sharedWorkspace] openApplicationAtURL:NSBundle.mainBundle.bundleURL
+                                        configuration:config
+                                    completionHandler:^(NSRunningApplication* app, NSError* error) {
+                                      if (error) core::debugLog("new window: %s", error.localizedDescription.UTF8String);
+                                      (void)app;
+                                    }];
+  return true;
+}
+
+void setFloating(bool floating) {
+  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  if (!window) return;
+  window.level = floating ? NSFloatingWindowLevel : NSNormalWindowLevel;
+  if (floating) {
+    window.collectionBehavior |= NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
+  } else {
+    window.collectionBehavior &= ~(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary);
+  }
+}
+
+void setWindowSize(float width, float height) {
+  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  if (!window) return;
+  NSRect frame = window.frame;
+  frame.origin.y += frame.size.height - height;
+  frame.size = NSMakeSize(width, height);
+  [window setFrame:frame display:YES animate:NO];
+}
+
+void cascadeWindow() {
+  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  if (!window) return;
+  NSPoint topLeft = NSMakePoint(NSMinX(window.frame) + 40, NSMaxY(window.frame) - 40);
+  [window cascadeTopLeftFromPoint:topLeft];
+}
+
+}  // namespace native

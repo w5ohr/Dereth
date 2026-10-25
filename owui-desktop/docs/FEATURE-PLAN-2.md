@@ -379,3 +379,23 @@ a fenced block (extra["captureOcr"], default on; extra["captureHotkey"], default
 both in Settings). Verified in the GUI via the palette's whole-screen command (status
 below). Not driven: the interactive region picker and the global hotkey (both are the
 OS's own UI; the hotkey registration returns success).
+
+2026-10-24 M (121 multi-window), scoped: a window per chat is a second *instance* of
+the app (`src/windows.cpp`, `native::openNewInstance` via NSWorkspace with
+`createsNewApplicationInstance`, inheriting the environment, `--chat <id>` and
+`--mini`). The App object is one ImGui context with per-view state spread across its
+members, so one context per NSWindow would be a refactor of most of the UI code; a
+second process gives every window the whole client today. Secondary instances skip
+the global hotkeys and the menu bar extra, never write settings, cascade their window,
+and open the chat once signed in; `--mini` is 560x760, sidebar hidden, floating
+(NSFloatingWindowLevel, joins all Spaces). Entry points: sidebar row menu, chat "More"
+menu, File ▸ Open Chat in New Window (Shift-Cmd-N) / as Floating Mini Window, View ▸
+Float on Top (Shift-Cmd-T), palette. Not delivered from the item's wording: native
+window tabs and dragging a chat out of a window (both need one process); a
+single-process, context-per-window version stays on the list. Verified against a
+scratch server: "Open this chat in a new window" from the palette started a second
+instance (`--chat <id>`) that signed in through the inherited environment and opened
+the same chat in a cascaded full window; "floating mini window" started a third at
+560x760 without the sidebar. Known cosmetic: at 560 pt the chat header's title and
+action icons overlap. A launch from a bundle under ~/Documents makes macOS ask for
+Documents access (LaunchServices-launched process); the /Applications copy does not.

@@ -161,6 +161,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
   back to the built-in field.
+- **Windows:** any chat can open in its own window - from the sidebar row's
+  menu, the chat's "More" menu, File ▸ Open Chat in New Window (⇧⌘N) or the
+  palette - and as a floating mini window (compact, no sidebar, above other
+  apps). View ▸ Float on Top (⇧⌘T) makes any window float. Each window is a
+  full copy of the client (its own composer, tools, streams); the server keeps
+  them in step, and only the first window owns the global hotkeys, the menu
+  bar extra and the settings file.
 - **Screen capture to chat:** the camera icon in the composer, File ▸ Capture
   Screen to Chat (⇧⌘2), the palette, or ⌃⌥S from any app runs the system
   capture (drag a region, or Space for a window); the shot is attached and

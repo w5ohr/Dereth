@@ -214,6 +214,13 @@ void App::installNativeHooks() {
   native::install(callbacks);
 
   const Json& extra = settings().extra;
+  // Secondary windows leave the global hotkeys and the menu bar extra to the
+  // first instance, or every window would answer them.
+  if (secondaryInstance) {
+    native::enableDropOnMainWindow();
+    applyWindowMode();
+    return;
+  }
   if (extra.value("captureHotkey", true)) {
     // Control-Option-S from any app: capture a region or window into the chat.
     if (!native::registerCaptureHotkey(1, false, true, true, false)) {
@@ -311,6 +318,9 @@ void App::drawPalette() {
   add("New chat", "command", [this] { newChat(); });
   add("Quick ask", "command", [this] { openQuickAsk(); });
   add("Capture screen region to chat", "command", [this] { captureScreenToChat(true); });
+  add("Open this chat in a new window", "command", [this] { openChatInNewWindow(chat.id, false); });
+  add("Open this chat as a floating mini window", "command", [this] { openChatInNewWindow(chat.id, true); });
+  add("Float this window on top", "command", [this] { toggleFloating(); });
   add("Capture whole screen to chat", "command", [this] { captureScreenToChat(false); });
   add("Export chat as Markdown", "command", [this] { exportChat("md"); });
   add("Export chat as HTML", "command", [this] { exportChat("html"); });

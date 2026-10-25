@@ -318,8 +318,11 @@ void App::shutdown() {
   stopFolderSync();
   mcpShutdown();
   socket_.stop();
-  settings().selectedModels = selectedModels;
-  settings().save();
+  if (!secondaryInstance) {
+    // Only the first window owns the settings file.
+    settings().selectedModels = selectedModels;
+    settings().save();
+  }
   // Join the pool here: letting the static thread vector run its destructor at
   // process exit with live threads aborts.
   async::shutdown();
@@ -1325,6 +1328,12 @@ void App::frame() {
         if (id.is_string()) fanoutModels.push_back(id);
       }
     }
+  }
+  if (signedIn_ && !startChatId.empty() && !chatsLoading) {
+    // --chat: this window was opened for one conversation.
+    const std::string id = startChatId;
+    startChatId.clear();
+    openChat(id);
   }
   if (signedIn_) {
     tickScheduler();

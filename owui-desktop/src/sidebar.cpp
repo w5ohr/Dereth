@@ -235,6 +235,8 @@ void App::drawSidebar(float width) {
           async::post([this] { refreshChats(false); });
         });
       }
+      if (ImGui::MenuItem("Open in new window")) openChatInNewWindow(summary.id, false);
+      if (ImGui::MenuItem("Open as floating mini window")) openChatInNewWindow(summary.id, true);
       if (ImGui::MenuItem("Duplicate")) {
         const std::string id = summary.id;
         async::run([this, id] {

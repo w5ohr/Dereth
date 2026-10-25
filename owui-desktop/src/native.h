@@ -42,6 +42,13 @@ void unregisterCaptureHotkey();
 bool captureScreen(bool interactive, std::string* png);
 void showMainWindow();
 
+// Windows. openNewInstance starts another copy of this app with `args`
+// (`open -n`), so a chat can live in its own window.
+bool openNewInstance(const std::vector<std::string>& args);
+void setFloating(bool floating);       // float above other apps' windows
+void setWindowSize(float width, float height);
+void cascadeWindow();                   // offset from the window already on screen
+
 // Menu bar extra.
 void setStatusItemVisible(bool visible);
 void refreshStatusMenu();
