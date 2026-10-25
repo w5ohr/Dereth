@@ -566,6 +566,17 @@ Things a browser tab can't do, plus the workflow features built on top:
   opens an empty playground. `Open WebUI --playgroundtest` covers kind
   detection, the regex and SQL runners, CSV parsing, the jq command line and
   the formatters.
+- **Model evaluation:** Tools ▸ Evaluate runs a saved prompt set across the
+  models you tick and grades every answer 0-10 with a judge model (any model
+  on the server; the reference answer or rubric you wrote for each prompt
+  goes to the judge), or by hand with Good/Bad thumbs that override the
+  grade. The latest run shows as a prompt × model matrix with grade, time and
+  the judge's reason on hover; a cell opens the full answer. Trends plot each
+  model's per-run mean so you can see a model, quantisation or prompt change
+  move the score. Sets and scores stay local (support/eval); CSV export and
+  copy. A starter set of five prompts comes built in. `Open WebUI --evaltest`
+  covers the set and score formats, the judge prompt and its parser, the
+  matrix, trends and CSV.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

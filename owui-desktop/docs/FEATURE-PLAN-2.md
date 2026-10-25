@@ -1475,3 +1475,24 @@ Also in this commit: `core/keychain.mm` logs every load/save/erase under OWUI_DE
 the call stack with OWUI_KEYCHAIN_TRACE=1) - added while chasing the keychain prompt seen
 in test runs; an instrumented run made no keychain call at all, so that prompt was a
 stale one from an earlier instance.
+
+2026-10-25 149 (model evaluation): `src/core/eval.*` (Prompt/PromptSet <-> JSON with a
+five-prompt `defaultSet`; Score <-> JSON and JSONL with `effectiveGrade` where thumbs
+override the judge; `judgeSystem`/`judgeUser` asking for a JSON verdict with the rubric;
+`parseJudge` reads JSON anywhere - fenced, after a <think> block, string scores clamped -
+or "7/10" / "Score: 7" prose; `stripThinking`; `latest` = newest score per prompt x model
+for a set; `trends` = per-run means per model, best mean first, with history, last and
+mean seconds; `csv`). `src/eval_pane.cpp`: Tools "Evaluate" tab - set combo, add/delete
+set, prompt list with remove and an add-prompt form (name, text, rubric), model
+checkboxes, judge checkbox + combo (defaults to the auto-route small model or the first
+model), Run the set (a worker runs prompt x model non-streaming completions then the
+judge, appending each score to support/eval/scores.jsonl; Stop cancels), Export/Copy
+CSV, the latest-grades matrix (coloured grades with seconds and thumbs marks, reason as
+tooltip, click for the answer with Good/Bad thumbs, copy), and per-model trend bars.
+Palette: "Model evaluation". `--evaltest` runs 12 offline checks. Verified on a scratch
+server with a seeded two-prompt set and qwen3:8b as both model and judge: the run
+progressed "Running 0 / 2", finished with a toast, the matrix showed 10/10 at 28.3 s and
+10/10 at 2.8 s (judge reasons recorded in scores.jsonl), and the trend line read
+"mean 10.0 - last 10.0 - 1 run" with its bar. Not covered: thumbs overrides and the cell
+detail beyond rendering, add/delete set and prompt forms, Export CSV..., Stop, and runs
+across several models. Note: the Tools tab bar now overflows at 1380 px and scrolls.

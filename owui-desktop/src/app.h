@@ -767,6 +767,10 @@ class App {
   void runPlayground();
   void drawPlayground();
 
+  // --- model evaluation (eval_pane.cpp) ------------------------------------
+  void runEval();
+  void drawEvalSection(float width);
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.
