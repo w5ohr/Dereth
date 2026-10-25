@@ -45,6 +45,7 @@ int runEmojiSelfTest() {
 
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
+  io.IniFilename = nullptr;   // a headless context: don't write imgui.ini into the current folder
   io.DisplaySize = ImVec2(800, 600);
   io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
   theme::loadFonts(16.0f);
