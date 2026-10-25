@@ -186,6 +186,17 @@ Things a browser tab can't do, plus the workflow features built on top:
   the match shortens the passage from the front until it finds it). Page
   controls, "Find passage again", the excerpt popup and "Open in Preview";
   files are cached under the app's cache folder.
+- **Prompt variables:** `{{clipboard}}`, `{{selection}}` (the terminal pane's
+  selection, or the text handed in through Services / Quick Ask),
+  `{{date}}`, `{{time}}`, `{{datetime}}`, `{{weekday}}`, `{{timezone}}`,
+  `{{user}}`, `{{model}}`, `{{title}}`, `{{file:path}}` (contents, `~` and
+  project-relative paths, 200 KB cap, binaries skipped) and
+  `{{input:Label|default}}` are filled in when the prompt is sent. Inputs
+  open a fill-in form first, with a live preview of what will go out; the
+  prompt history keeps the template, not the expansion. Open WebUI's
+  `{{CLIPBOARD}}`, `{{CURRENT_DATE}}`, `{{USER_NAME}}`... work too, so saved
+  prompts from the workspace expand the same way. `Open WebUI --varstest`
+  runs the parser's offline checks.
 - **Stop, edit, continue:** stop a reply mid-stream, fix its text in place
   (pencil in the reply's action row: Save, or Save & continue) and let the
   model carry on from the edited tail - the reply so far is sent back as the

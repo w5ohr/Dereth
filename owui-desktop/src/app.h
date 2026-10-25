@@ -17,6 +17,7 @@
 #include "agents/tool_loop.h"
 #include "api/client.h"
 #include "core/pty.h"
+#include "core/promptvars.h"
 #include "core/settings.h"
 #include "core/socketio.h"
 #include "imgui.h"
@@ -416,6 +417,25 @@ class App {
   // --- sampling panel (sampling.cpp) ----------------------------------------
   void drawSamplingPanel();              // the "##chatparams" popup body
   bool hasSamplingParams() const;        // anything set besides the system prompt
+
+  // --- prompt variables (prompt_vars.cpp) -----------------------------------
+  // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
+  // are filled in when a prompt is sent; inputs are asked for in a form first.
+  struct PromptForm {
+    bool open = false;
+    bool justOpened = false;
+    bool submit = false;
+    std::string text;                         // the template as typed
+    std::vector<promptvars::Var> fields;      // one per distinct input label
+    std::vector<std::string> values;
+  } promptForm;
+  std::string lastSelectionText;              // text handed in via Services / Quick Ask
+  bool interceptPromptVariables(const std::string& text);   // true when it took the send over
+  void sendExpandedPrompt(const promptvars::Expansion& expansion, const std::string& original);
+  void drawPromptForm();
+  promptvars::Context promptContext() const;
+  bool sendingExpanded_ = false;
+  std::string historyOverride_;               // what pushHistory records instead of the sent text
 
   // --- structured output (structured.cpp) -----------------------------------
   // A JSON schema for this chat: the request asks for it, the reply is checked

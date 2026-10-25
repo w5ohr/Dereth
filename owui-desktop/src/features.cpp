@@ -181,7 +181,10 @@ void App::installNativeHooks() {
     async::post([this, id] { openChat(id); });
   };
   callbacks.askText = [this](const std::string& text) {
-    async::post([this, text] { openQuickAsk(text); });
+    async::post([this, text] {
+      lastSelectionText = text;   // what {{selection}} expands to
+      openQuickAsk(text);
+    });
   };
   callbacks.dropFiles = [this](const std::vector<std::string>& paths) {
     async::post([this, paths] {

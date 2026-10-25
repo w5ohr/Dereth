@@ -509,3 +509,26 @@ tag. Not exercised: stopping a live stream first (Stop is the existing button; a
 stopped reply is just a non-streaming message, the same state the seed put it in), and
 OpenAI-style backends (they get the same prefill message; many ignore `reasoning_content`
 and some reject an assistant-last conversation).
+
+2026-10-24 I (55 prompt variables): `src/core/promptvars.{h,cpp}` (parse / inputs /
+expand with a Context of callbacks, app-free) and `src/prompt_vars.cpp` (the app's
+context, the send-time intercept, the fill-in form). `sendMessage` hands any prompt
+with a known `{{...}}` to `interceptPromptVariables`: with no inputs it expands and
+sends at once (a toast lists what went in: "clipboard: 9 B - file x: 3.1 KB"); with
+`{{input:Label|default}}` fields it opens a modal form - one field per distinct label,
+defaults prefilled and selected, a live "Will send" preview, Enter sends, Esc cancels
+(the template stays in the composer). The history ring records the template, not the
+expansion (`historyOverride_`). Names: clipboard, selection (terminal selection, else
+the last Services / Quick Ask text), date, time, datetime, weekday, timezone, user,
+model, title, file:path (~, project-relative, 200 KB cap, binaries replaced by a
+note), input; Open WebUI's upper-case CURRENT_DATE / USER_NAME / CLIPBOARD aliases map
+onto them; unknown names stay as written; text that came out of the clipboard or a
+file is never re-scanned. `--varstest` runs 22 offline checks (all pass). Verified
+against a scratch server with qwen3:8b: a prompt with {{clipboard}}, {{input:Mood|
+cheerful}}, {{date}} and {{weekday}} opened the form with "cheerful" selected and the
+preview reading "...says PINEAPPLE, my mood is cheerful and today is 2026-10-24
+(Saturday)"; typing "grumpy" and Enter sent the expanded text (saved on the server as
+such), the model answered, and Up in the empty composer recalled the template with its
+braces intact. Not delivered from the item's wording: `{{selection}}` of another app's
+text (macOS gives no public way to read it without Accessibility; Services covers the
+"select text, ask" flow), and a picker for inserting variables (they are typed).

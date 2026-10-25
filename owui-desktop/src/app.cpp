@@ -903,6 +903,7 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
 
 void App::sendMessage(const std::string& text) {
   if (core::trim(text).empty() && attachments.empty()) return;
+  if (!sendingExpanded_ && interceptPromptVariables(text)) return;
   if (!serverReachable && attachments.empty()) {
     offlineQueue.push_back(text);
     composer.clear();
@@ -975,7 +976,7 @@ void App::sendMessage(const std::string& text) {
 
   attachments.clear();
   composer.clear();
-  pushHistory(text);
+  pushHistory(historyOverride_.empty() ? text : historyOverride_);
   clearDraft(draftKey());
   scrollToBottom = true;
 
@@ -1534,6 +1535,7 @@ void App::frame() {
     drawPalette();
     drawQuickAsk();
     drawContextInspector();
+    drawPromptForm();
     drawCitationPopup();
     drawProjectFilesPopup();
   }
