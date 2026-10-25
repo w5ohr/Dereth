@@ -393,6 +393,8 @@ void App::drawPalette() {
   add("Theme editor (colours, VS Code / Base16 import, server accent)", "settings", [this] { pane = Pane::Settings; });
   add("Take the tour", "command", [this] { startTour(); });
   add("Accessibility (reduced motion, high contrast, UI font, scale)", "settings", [this] { pane = Pane::Settings; });
+  add("Backend pool (several servers, failover, least-loaded routing)", "settings", [this] { pane = Pane::Settings; });
+  add("Check the backend pool now", "command", [this] { poolCheckNow(); });
   add("Reading mode (toggle: measure, text size, controls on hover)", "command", [this] { toggleReadingMode(); });
   add("Menu-bar-only mode (toggle: no Dock icon, live from the extra)", "command", [this] { setMenuBarOnly(!settings().extra.value("menuBarOnly", false)); });
   add("What's new in this version", "command", [this] { showWhatsNewSheet(true); });

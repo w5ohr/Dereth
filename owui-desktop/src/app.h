@@ -12,6 +12,7 @@
 #include <set>
 
 #include "core/accessibility.h"
+#include "core/pool.h"
 #include "core/readingmode.h"
 #include "core/rerank.h"
 #include "core/retrieval.h"
@@ -840,6 +841,16 @@ class App {
   accessibility::Prefs accessibilityPrefs() const;
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
+
+  // --- multi-server pool (backend_pool.cpp) ---------------------------------
+  pool::Prefs poolPrefs() const;
+  std::vector<pool::Health> poolHealth() const;
+  std::string poolLastRoute() const;
+  void poolCheckNow();
+  void tickBackendPool();
+  agents::Transport poolTransport();          // picks a member per request, fails over
+  std::vector<std::string> poolModelUnion();  // blocking: every member's models
+  void drawBackendPoolSection(float width);
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

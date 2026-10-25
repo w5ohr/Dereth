@@ -1518,6 +1518,7 @@ void App::frame() {
   pollStreams();
   tickTts();
   tickSmartFolders();
+  tickBackendPool();
   tickOnboarding();
   handleShortcuts();
 

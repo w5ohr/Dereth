@@ -681,6 +681,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   partners paired - and a UI scale slider (0.8x to 1.6x) that scales the
   whole interface, applied live. `Open WebUI --a11ytest` covers the
   preferences, the font list and the contrast sets.
+- **Multi-server pool:** Settings ▸ Backend pool gathers any of the direct
+  backends (the Ollama URL, LM Studio, vLLM, a second Ollama box, ...) behind
+  one "Pool (N servers)" entry that private chats pick like any backend. Every
+  30 s (5-600) the app probes each member - `/api/ps` for Ollama, `/models`
+  for OpenAI-compatible - and the card shows a health table: alive with the
+  loaded-model count, this app's in-flight requests and the probe latency, or
+  down with the reason. Each request goes to the least-loaded alive member
+  (in-flight first, then loaded models, then latency), or round-robin, or the
+  first alive in the configured order; when a member fails before producing
+  any output the request fails over to the next member, the member is marked
+  down and the debug log says so. The pool's model list is the union of its
+  members'. "Check now" re-probes; the card shows where the last request went.
+  `Open WebUI --pooltest` covers the preferences, the probe parser, the three
+  routing orders and the health text.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

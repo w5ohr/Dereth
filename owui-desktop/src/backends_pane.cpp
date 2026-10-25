@@ -85,6 +85,14 @@ std::vector<backends::Backend> App::backendList() {
   for (const backends::Backend& b : backends::fromJson(settings().extra.value("backends", Json::array()))) {
     out.push_back(b);
   }
+  const pool::Prefs pp = poolPrefs();
+  if (pp.enabled && !pp.members.empty()) {
+    backends::Backend b;
+    b.id = pool::kPoolId;
+    b.name = "Pool (" + std::to_string(pp.members.size()) + " servers)";
+    b.kind = backends::Kind::Ollama;
+    out.push_back(b);
+  }
   return out;
 }
 
@@ -101,6 +109,7 @@ bool App::findBackend(const std::string& id, backends::Backend* out) {
 std::string App::backendKey(const std::string& id) { return id == kImplicitOllama ? "" : loadKey(id); }
 
 agents::Transport App::backendTransport(const backends::Backend& backend) {
+  if (backend.id == pool::kPoolId) return poolTransport();
   const std::string key = backendKey(backend.id);
   return [backend, key](const Json& payload, const std::function<bool(const Json&)>& onLine,
                         const std::atomic<bool>* cancel) {
@@ -120,9 +129,10 @@ void App::refreshBackendModels(const std::string& id, bool force) {
   if (cache.loading || (cache.loaded && !force)) return;
   cache.loading = true;
   const std::string key = backendKey(id);
-  async::run([backend, key, id] {
+  async::run([this, backend, key, id] {
     std::string error;
-    std::vector<std::string> models = backends::listModels(backend, key, &error);
+    std::vector<std::string> models = id == pool::kPoolId ? poolModelUnion() : backends::listModels(backend, key, &error);
+    if (id == pool::kPoolId && models.empty()) error = "no member answered";
     async::post([id, models, error] {
       ModelCache& c = gModels[id];
       c.models = models;

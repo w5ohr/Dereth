@@ -1728,3 +1728,38 @@ Comic Sans MS, Tahoma, Trebuchet MS and Verdana first as recommended, choosing T
 saved the regular and bold paths and the interface re-rendered in Tahoma after the
 between-frames reload. Not covered: reduced motion visually (self-test and code review
 only), the UI scale slider beyond rendering, and a user-installed OpenDyslexic.
+
+2026-10-25 75 (multi-server pool): `src/core/pool.*` (Prefs <-> extra["backendPool"]:
+enabled, members = backend ids deduped, strategy least-loaded | round-robin | first-alive,
+checkEverySec clamped 5-600, failover; Health {alive, running, inFlight, latencyMs,
+checkedAt, error}; `runningFrom` counts Ollama /api/ps models; `order`/`pick` drop dead
+members, sort by inFlight*10 + running + latency/1000, rotate, or keep the configured
+order - unknown health counts as alive; `describe`). `src/backend_pool.cpp`: a virtual
+"pool" backend appended to `backendList()` while enabled with members ("Pool (N
+servers)"), `backendTransport` routes it to `poolTransport()` which tries `pool::order`
+in turn, counts in-flight per member, and treats only real chat chunks (message /
+choices / delta / content_block / response / done) as output - the JSON body and the
+{"error"} line streamChat forwards on an HTTP failure are held back so the next member
+can be tried, replayed only when the member is kept; a member that fails before output
+is marked down and logged "pool: <id> failed before any output (...) - trying the next
+member". `tickBackendPool()` in frame() probes every member on a worker every
+checkEverySec (GET /api/ps, /models or /v1/models with the saved key; alive = any
+answer below 500), `poolModelUnion()` feeds the pool's model cache, Settings "BACKEND
+POOL" card after Direct backends: enable, member checkboxes from the backend list,
+routing combo, interval slider, fail-over switch, Check now, "last request went to
+<name>" and the health table coloured success/danger; two palette entries. `--pooltest`
+runs 7 offline checks. Verified on a scratch home with three members: a dead Ollama at
+localhost:11435, a "half-dead" one pointed at the scratch Open WebUI on :3001 (answers
+GET /api/ps 200 but POST /api/chat 405) and the real Ollama on :11434. The table showed
+the dead box "down: Couldn't connect to server" and the others alive with latencies; a
+private chat's backend picker listed "Pool (3 servers)" and the union model list; with
+first-alive routing a message went to the half-dead member first, the log read "pool:
+half01 failed before any output (HTTP 405) - trying the next member", and qwen3:8b on
+the real Ollama answered "pong" (first token 4.8 s); the card then read "last request
+went to Ollama" and Ollama "1 model loaded". Two defects fixed on the way: the wrapper
+first counted the 405 body line as output, and then only held lines with an "error"
+key. Known limit: a member that answers the probe but rejects chats is re-marked alive
+at the next probe (the probe is a GET, not a chat), so it is retried first and fails
+over again each time - the failover cost, not an outage. Not covered: round-robin and
+least-loaded beyond the self-test, API-keyed members, and OpenAI-kind members in the
+pool (the union path ran only against Ollama).
