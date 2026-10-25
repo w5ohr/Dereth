@@ -42,6 +42,7 @@ struct StreamDelta {
   std::string title;          // server-generated chat title
   Json tags;                  // server-generated chat tags
   Json followUps;
+  Json logprobs;              // choice.logprobs.content entries, when the backend sends them
   bool done = false;
 };
 

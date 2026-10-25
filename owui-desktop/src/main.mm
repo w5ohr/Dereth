@@ -519,6 +519,7 @@ int runRerankSelfTest();
 int runAccessibilitySelfTest();
 int runPoolSelfTest();
 int runOutputSelfTest();
+int runLogprobSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -571,6 +572,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--a11ytest") return runAccessibilitySelfTest();
     if (std::string(argv[i]) == "--pooltest") return runPoolSelfTest();
     if (std::string(argv[i]) == "--outputtest") return runOutputSelfTest();
+    if (std::string(argv[i]) == "--logprobtest") return runLogprobSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

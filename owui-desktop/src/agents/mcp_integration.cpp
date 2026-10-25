@@ -541,6 +541,7 @@ void App::startToolStream(const std::string& assistantId, const std::string& mod
   Json payload = buildCompletionPayload(assistantId, model);
   agents::LoopConfig config = baseToolConfig(model);
   applyOutputControls(config);
+  applyLogprobRequest(config.extra);
   config.messages = payload["messages"];
   config.maxRounds = std::max(1, settings().extra.value("mcpMaxRounds", 8));
 
@@ -568,6 +569,10 @@ void App::startToolStream(const std::string& assistantId, const std::string& mod
       stream->content += content;
       stream->reasoning += reasoning;
       return !stream->cancel.load();
+    };
+    hooks.onLogprobs = [stream](const Json& entries) {
+      std::lock_guard<std::mutex> lock(stream->mutex);
+      for (const auto& t : logprobs::toJson(logprobs::fromEntries(entries))) stream->logprobs.push_back(t);
     };
     agents::LoopResult result = agents::runToolLoop(api_, directUrl, config, hooks, &stream->cancel);
     std::lock_guard<std::mutex> lock(stream->mutex);

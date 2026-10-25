@@ -12,6 +12,7 @@
 #include <set>
 
 #include "core/accessibility.h"
+#include "core/logprobs.h"
 #include "core/outputctl.h"
 #include "core/pool.h"
 #include "core/readingmode.h"
@@ -160,6 +161,7 @@ struct Message {
   Json followUps = Json::array();
   std::vector<ToolCall> toolCalls;
   Json agentRun;                // agent mode: goal, steps, outcome (saved as `agentRun`)
+  Json logprobs = Json::array();   // token log-probabilities, compact (saved as `desktop_logprobs`)
   bool streaming = false;
   // Streaming through the server (socket path): the placeholder is saved
   // with its parentId up front, since the server fills that record itself.
@@ -227,6 +229,7 @@ struct Stream {
   std::string status;
   Json sources = Json::array();
   Json usage = Json::object();
+  Json logprobs = Json::array();   // compact token entries as they stream in
   bool done = false;
   bool started = false;
   std::string error;
@@ -842,6 +845,14 @@ class App {
   accessibility::Prefs accessibilityPrefs() const;
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
+
+  // --- logprob view (logprob_view.cpp) --------------------------------------
+  logprobs::Prefs logprobPrefs() const;
+  void applyLogprobRequest(Json& fields);          // logprobs + top_logprobs when enabled
+  bool confidenceShown(const std::string& messageId) const;
+  void drawConfidenceButton(const Message& message);
+  void drawTokenFlow(const Message& message, float width);
+  void drawLogprobSettings();
 
   // --- grammar / tool-choice controls (output_controls.cpp) -----------------
   outputctl::Controls outputControls() const;            // chat.raw["outputControls"]

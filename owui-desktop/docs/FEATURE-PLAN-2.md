@@ -1796,3 +1796,35 @@ on the way: a chosen mode with an empty grammar did not count as active and was 
 stored, so the radio snapped back. Not covered: tool choice beyond the self-test (no
 MCP server on the scratch home), the grammar against a real llama.cpp server, and
 Anthropic.
+
+2026-10-25 78 (logprob view): `src/core/logprobs.*` (Prefs <-> extra["logprobs"]: enabled,
+top clamped 1-8; Token {token, logprob, alts}; `fromEntries` for Ollama's chunk["logprobs"]
+and OpenAI's choice.logprobs.content entries, `fromOpenAIChoice`; compact storage
+[[token, logprob, [[alt, logprob]...]]...] via `toJson`/`fromJson`; `confidence` = exp
+clamped; `tint` red -> amber -> green; `percent`; `stats` mean / under-50 % count / lowest;
+`statsLine`; `tooltip`; `aligned`). Request: `applyLogprobRequest` adds logprobs +
+top_logprobs to the server payload and to the tool loop's `extra` (private and MCP
+streams); `openaiRequest` passes both through, the Ollama branch keeps them, Anthropic
+never sees them. Capture: `LoopHooks.onLogprobs` fires for content chunks only (thinking
+chunks skipped), `OpenAIDecoder` carries choice.logprobs.content on its Ollama-shaped
+chunks, `api::StreamDelta.logprobs` reads choice.logprobs.content on the SSE and socket
+paths, `Stream.logprobs` accumulates the compact entries and the frame flush copies them
+to `Message.logprobs` (saved as `desktop_logprobs`, read back on load). View
+(`src/logprob_view.cpp`): a layers button in the action row when a reply has logprobs,
+`drawTokenFlow` replaces the markdown body with tinted token rectangles wrapped to the
+content width (newlines in tokens honoured), a summary line, a note when the tokens no
+longer spell the text, a tooltip with the hovered token's percentage and its
+alternatives, and a legend; Settings > Chat gets the switch and the alternatives slider;
+palette entry. `--logprobtest` runs 12 offline checks (output and backends self-tests
+still pass). Verified on a scratch home against Ollama 0.40.10 / qwen3:8b: a private chat
+asked why the sky is blue, the action row showed the layers button, the view read
+"Confidence: mean 93% over 58 tokens - 3 under 50% - lowest ' atmosphere' 17%" with the
+text tinted (amber on "shorter", "effectively", "atmosphere"), hovering ' atmosphere'
+showed 17% with alternatives ' upper' 83% and ' ozone' 0%; after a relaunch the private
+chat still offered the view with the same numbers. One defect fixed on the way: the
+legend went through the printf-style dim text, so "50%." lost its sign. Known limit
+found: Open WebUI 0.12.3 relays "logprobs": null for Ollama models even when the request
+asks (a direct curl of /api/chat/completions confirmed it), so through the server the
+button appears only for OpenAI-style models that return them - not exercised. Not
+covered: OpenAI- and Anthropic-kind direct backends beyond the self-test, and very long
+replies' draw cost (one rectangle and text call per token).

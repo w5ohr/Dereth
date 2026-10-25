@@ -297,7 +297,7 @@ Json openaiRequest(const Json& p) {
   }
   // Grammar and tool-choice controls ride through as is (llama.cpp-style
   // servers read `grammar`; everyone OpenAI-shaped reads `tool_choice`).
-  for (const char* key : {"grammar", "tool_choice"}) {
+  for (const char* key : {"grammar", "tool_choice", "logprobs", "top_logprobs"}) {
     if (p.contains(key) && !p[key].is_null()) body[key] = p[key];
   }
   return body;
@@ -321,7 +321,11 @@ std::vector<Json> OpenAIDecoder::feed(const Json& chunk) {
   for (const char* key : {"reasoning_content", "reasoning"}) {
     if (delta.contains(key) && delta[key].is_string()) thinking += delta[key].get<std::string>();
   }
-  if (!content.empty() || !thinking.empty()) out.push_back(ollamaChunk(content, thinking));
+  if (!content.empty() || !thinking.empty()) {
+    Json chunk = ollamaChunk(content, thinking);
+    if (choice.contains("logprobs") && choice["logprobs"].is_object() && choice["logprobs"].contains("content")) chunk["logprobs"] = choice["logprobs"]["content"];
+    out.push_back(chunk);
+  }
   if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
     for (const auto& tc : delta["tool_calls"]) {
       const int index = tc.value("index", static_cast<int>(toolCalls.size()));

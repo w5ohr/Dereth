@@ -112,6 +112,7 @@ void App::drawSettingsPane() {
       cfg.extra["virtualTranscript"] = virtualOn;
       cfg.save();
     }
+    drawLogprobSettings();
     widgets::dimText("Live socket: %s", socketConnected() ? "connected" : "offline");
   }, width);
 

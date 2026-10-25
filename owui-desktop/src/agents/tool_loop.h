@@ -78,6 +78,9 @@ struct LoopHooks {
   // Progress for the UI; `outcome` is set for Done/Failed/Denied.
   std::function<void(const Call&, CallState, const ToolOutcome* outcome)> onCallState;
   std::function<void(const Json& usage)> onUsage;
+  // Token log-probabilities for streamed content (Ollama's chunk["logprobs"]
+  // entries); thinking tokens are not passed.
+  std::function<void(const Json& entries)> onLogprobs;
 };
 
 struct LoopResult {

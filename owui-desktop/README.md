@@ -709,6 +709,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   leaves tools out altogether. The choice is saved in the chat and shows in
   the gear's highlight. `Open WebUI --outputtest` covers the record, the
   validator, the wire shapes and the backend mappers.
+- **Token confidence (logprobs):** Settings ▸ Chat "Ask for token
+  probabilities" adds `logprobs` and `top_logprobs` (1-8 alternatives) to
+  every request. When a backend answers with them - Ollama 0.12+ and
+  OpenAI-style servers do, directly or through the server for OpenAI-style
+  models - the reply's action row gains a layers button that swaps the
+  rendered text for the token stream, each token tinted green (sure), amber
+  (unsure) or red (under 50 %), with a summary line (mean confidence, tokens
+  under 50 %, the least confident token) and, on hover, the alternatives the
+  model weighed with their own percentages. Thinking tokens are left out,
+  the probabilities are saved with the message (`desktop_logprobs`) so the
+  view survives a relaunch, and the view notes when the tokens no longer
+  match the text shown. `Open WebUI --logprobtest` covers the parsers, the
+  compact storage, confidence, tints, stats, tooltips and the request
+  passthrough.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

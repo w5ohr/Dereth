@@ -643,7 +643,8 @@ void App::drawChatPane() {
           };
         }
         options.onApplyDiff = [this](const std::string& diff) { applyCodeBlockToFile(diff); };
-        md::render("body", unredact(message.content), options);
+        if (confidenceShown(message.id) && !message.logprobs.empty()) drawTokenFlow(message, contentWidth);
+        else md::render("body", unredact(message.content), options);
       } else {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + contentWidth);
         ImGui::TextUnformatted(unredact(message.content).c_str());
@@ -738,6 +739,7 @@ void App::drawChatPane() {
         if (!isUser) drawCitedCopyButton(message);   // footnotes / BibTeX when the reply has sources
         if (!isUser) drawRetrievalButton(message);   // chunks, relevance, pin / exclude, re-ask
         if (!isUser) drawLibraryButton(messageId);   // save to the cross-chat library
+        if (!isUser) drawConfidenceButton(message);  // token confidence view when logprobs came back
         ImGui::SameLine();
         if (icons::button("quote", icons::Icon::Chat, "Quote in a reply")) quoteReply(message);
         ImGui::SameLine();

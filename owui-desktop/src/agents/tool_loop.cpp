@@ -242,6 +242,7 @@ LoopResult runToolLoop(api::Client& api, const std::string& directOllamaUrl, con
           std::string reasoning = message.value("thinking", "");
           splitter.feed(message.value("content", ""), &content, &reasoning);
           if (!deliver(content, reasoning)) return false;
+          if (hooks.onLogprobs && !message.value("content", "").empty() && line.contains("logprobs") && line["logprobs"].is_array()) hooks.onLogprobs(line["logprobs"]);
           if (message.contains("tool_calls") && message["tool_calls"].is_array()) {
             for (const auto& call : message["tool_calls"]) toolCalls.push_back(call);
           }

@@ -8,6 +8,7 @@
 
 #include "core/async.h"
 #include "core/common.h"
+#include "core/logprobs.h"
 #include "core/doctext.h"
 #include "core/keychain.h"
 #include "core/store.h"
@@ -98,6 +99,7 @@ Json Message::toJson() const {
     j["mcpToolCalls"] = calls;
   }
   if (agentRun.is_object()) j["agentRun"] = agentRun;
+  if (!logprobs.empty()) j["desktop_logprobs"] = logprobs;
   return j;
 }
 
@@ -123,6 +125,7 @@ Message Message::fromJson(const Json& j) {
   m.modelName = j.value("modelName", m.model);
   if (j.contains("files") && j["files"].is_array()) m.files = j["files"];
   if (j.contains("sources") && j["sources"].is_array()) m.sources = j["sources"];
+  if (j.contains("desktop_logprobs") && j["desktop_logprobs"].is_array()) m.logprobs = j["desktop_logprobs"];
   if (j.contains("usage") && j["usage"].is_object()) m.usage = j["usage"];
   if (j.contains("reasoning_content") && j["reasoning_content"].is_string()) {
     m.reasoning = j["reasoning_content"];
@@ -817,6 +820,7 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
       }
     }
   }
+  applyLogprobRequest(payload);   // logprobs + top_logprobs for the confidence view
   return payload;
 }
 
@@ -867,6 +871,7 @@ void App::handleSocketEvent(const std::string& name, const Json& payload) {
   stream->started = true;
   stream->content += delta.content;
   stream->reasoning += delta.reasoning;
+  for (const auto& t : logprobs::toJson(logprobs::fromEntries(delta.logprobs))) stream->logprobs.push_back(t);
   if (delta.hasReplace) stream->content = delta.replaceContent;
   if (!delta.statusText.empty()) stream->status = delta.statusText;
   if (!delta.sources.is_null() && !delta.sources.empty()) stream->sources = delta.sources;
@@ -997,6 +1002,7 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
             stream->started = true;
             stream->content += delta.content;
             stream->reasoning += delta.reasoning;
+            for (const auto& t : logprobs::toJson(logprobs::fromEntries(delta.logprobs))) stream->logprobs.push_back(t);
             if (!delta.statusText.empty()) stream->status = delta.statusText;
             if (!delta.sources.is_null() && !delta.sources.empty()) stream->sources = delta.sources;
             if (!delta.usage.is_null() && !delta.usage.empty()) stream->usage = delta.usage;
@@ -1013,6 +1019,7 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
         const Json& choices = res.data.value("choices", Json::array());
         if (!choices.empty()) {
           stream->content += choices[0].value("message", Json::object()).value("content", "");
+          stream->logprobs = logprobs::toJson(logprobs::fromOpenAIChoice(choices[0]));
         }
         if (res.data.contains("usage")) stream->usage = res.data["usage"];
       } else {
@@ -1259,6 +1266,7 @@ void App::pollStreams() {
         }
         message.reasoning = stream->reasoning;
         message.status = stream->status;
+        if (message.logprobs.size() != stream->logprobs.size()) message.logprobs = stream->logprobs;
         if (!stream->sources.empty()) message.sources = stream->sources;
         if (!stream->usage.empty()) message.usage = stream->usage;
         if (stream->agentRun.is_object()) message.agentRun = stream->agentRun;

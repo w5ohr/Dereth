@@ -249,6 +249,7 @@ bool parseCompletionChunk(const std::string& data, StreamDelta* out) {
       out->reasoning = delta["reasoning"].get<std::string>();
     }
     if (delta.contains("tool_calls")) out->toolCalls = delta["tool_calls"];
+    if (choice.contains("logprobs") && choice["logprobs"].is_object() && choice["logprobs"].contains("content")) out->logprobs = choice["logprobs"]["content"];
     if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) {
       out->done = true;
     }
@@ -311,6 +312,8 @@ bool parseSocketEvent(const Json& payload, StreamDelta* out, std::string* messag
       if (delta.contains("content") && delta["content"].is_string()) {
         out->content = delta["content"].get<std::string>();
       }
+      const Json& choice = data["choices"][0];
+      if (choice.contains("logprobs") && choice["logprobs"].is_object() && choice["logprobs"].contains("content")) out->logprobs = choice["logprobs"]["content"];
     }
     if (data.value("done", false)) out->done = true;
     return true;
