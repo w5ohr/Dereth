@@ -1203,3 +1203,28 @@ residency lanes drew. Not covered: Intel Macs / machines where IOKit has no util
 key (the tile says n/a), a battery-powered run, thermal states other than nominal, and
 the passthrough-down fallback to the direct Ollama URL.
 
+2026-10-25 III (73 model library browser): `src/core/modellib.{h,cpp}` (app-free: URLs for
+the Hub search / tree API and ollama.com search / tags pages; parseHfSearch (id,
+downloads, likes, pipeline); parseHfTree (single-file .gguf entries with sizes, split
+files skipped, sorted by size, quant from the file name -> pull name
+"hf.co/<repo>:<QUANT>"); parseOllamaSearch (library links deduped, tag links skipped,
+description from the <p title>); parseOllamaTags (tags deduped, the first "<n>GB|MB" after
+each link as its size); quantOf, parseSize / humanSize, enoughSpace (size x 1.1 + 512 MB),
+parseProgress for pull lines). `src/model_library.cpp`: Tools > Models - source combo
+(Ollama library / Hugging Face GGUF), query, Search; results as cards with a Variants
+button that loads tags or GGUF files into a table (variant, pulls-as, size, Pull - disabled
+with a tooltip when the disk cannot take it); a pull queue card at the top where jobs run
+one after another through api_.ollamaPull with a progress bar, Cancel, Clear / Remove /
+Drop, and refreshModels() after a success; free space from statvfs on the Ollama models
+folder. Palette "Find and pull models". `--modellibtest` runs 9 offline checks.
+Verified on a scratch server against the live sites: "qwen3" on the Ollama library listed
+12 models with descriptions; Variants on qwen3 listed latest / 0.6b / ... / 32b with sizes
+(523 MB to 20 GB) - after a fix: ollama.com answers a JSON Accept with a bare tag list and
+no sizes, so its pages are now asked for as HTML; the Hugging Face search listed 25 GGUF
+repos with downloads and likes; Variants on Qwen/Qwen2.5-0.5B-Instruct-GGUF listed nine
+quantisations from Q2_K 415 MB to FP16 1.3 GB; Pull on Q2_K queued it, the bar showed the
+download, and `ollama list` then held hf.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF:Q2_K (415 MB;
+removed again after the test with `ollama rm`). Not covered: Cancel mid-pull, the
+not-enough-space branch (this disk has 524 GB free), split-file GGUFs (skipped by
+design), and the Ollama pages' HTML is a scrape that can break when the site changes.
+

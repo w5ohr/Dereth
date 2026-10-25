@@ -20,7 +20,7 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Health };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Health, Models };
 
 Tab gTab = Tab::Command;
 
@@ -61,6 +61,7 @@ const char* tabName(Tab tab) {
     case Tab::TestLoop: return "Test loop";
     case Tab::Audit: return "Audit";
     case Tab::Health: return "Health";
+    case Tab::Models: return "Models";
   }
   return "";
 }
@@ -211,7 +212,7 @@ void App::drawToolsPane() {
 
   if (ImGui::BeginTabBar("##toolstabs")) {
     for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex,
-                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop, Tab::Audit, Tab::Health}) {
+                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop, Tab::Audit, Tab::Health, Tab::Models}) {
       if (ImGui::BeginTabItem(tabName(tab))) {
         gTab = tab;
         ImGui::EndTabItem();
@@ -588,6 +589,9 @@ void App::drawToolsPane() {
       break;
     case Tab::Health:
       drawHealthSection(width);
+      break;
+    case Tab::Models:
+      drawModelLibrarySection(width);
       break;
   }
   if (gTab != Tab::Health) healthTabHidden();

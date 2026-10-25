@@ -459,6 +459,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   Unload button per model, and a residency timeline. A heavy-swap warning
   says when a model is being paged. `Open WebUI --healthtest` checks the
   sampler.
+- **Model library:** Tools ▸ Models searches the Ollama library or Hugging
+  Face GGUF repositories, lists each model's variants with their sizes
+  (tags for Ollama, quantisations for Hugging Face, pulled as
+  `hf.co/<repo>:<QUANT>`), and queues pulls that run one after another
+  through the server's Ollama with a progress bar and Cancel. Before a pull
+  is queued the free space where Ollama keeps models is checked, with
+  headroom. The Ollama pages are scraped, so that side can break when the
+  site changes; the Hugging Face side uses the Hub API. `Open WebUI
+  --modellibtest` covers the parsers.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

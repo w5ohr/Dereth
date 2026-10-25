@@ -437,6 +437,12 @@ class App {
   void tickHealth();
   void drawHealthSection(float width);
   void healthTabHidden();
+
+  // --- model library (model_library.cpp) ------------------------------------
+  // Search the Ollama library / Hugging Face GGUF, queue pulls with progress.
+  void drawModelLibrarySection(float width);
+  void modelQueuePull(const std::string& name, double bytes);
+  void modelPullNext();
   std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
   void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
   void mcpImportConfig(const std::string& path);
