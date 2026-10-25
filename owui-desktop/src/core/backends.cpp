@@ -295,6 +295,11 @@ Json openaiRequest(const Json& p) {
                                      {"json_schema", Json{{"name", "response"}, {"schema", format}}}};
     }
   }
+  // Grammar and tool-choice controls ride through as is (llama.cpp-style
+  // servers read `grammar`; everyone OpenAI-shaped reads `tool_choice`).
+  for (const char* key : {"grammar", "tool_choice"}) {
+    if (p.contains(key) && !p[key].is_null()) body[key] = p[key];
+  }
   return body;
 }
 
@@ -441,6 +446,12 @@ Json anthropicRequest(const Json& p) {
                            {"input_schema", fn.value("parameters", Json{{"type", "object"}, {"properties", Json::object()}})}});
     }
     body["tools"] = tools;
+    if (p.contains("tool_choice") && !p["tool_choice"].is_null()) {
+      const Json& tc = p["tool_choice"];
+      if (tc.is_string() && tc == "required") body["tool_choice"] = Json{{"type", "any"}};
+      else if (tc.is_string() && tc == "auto") body["tool_choice"] = Json{{"type", "auto"}};
+      else if (tc.is_object() && tc.contains("function")) body["tool_choice"] = Json{{"type", "tool"}, {"name", tc["function"].value("name", "")}};
+    }
   }
   return body;
 }
@@ -513,6 +524,8 @@ StreamResult streamChat(const Backend& backend, const std::string& key, const Js
   if (backend.kind == Kind::Ollama) {
     Json body = payload;
     body["stream"] = true;
+    body.erase("grammar");       // Ollama has neither; the tool loop's system line stands in
+    body.erase("tool_choice");
     req.url = backend.url + "/api/chat";
     req.body = body.dump();
     if (!key.empty()) req.headers.push_back({"Authorization", bearer(key)});

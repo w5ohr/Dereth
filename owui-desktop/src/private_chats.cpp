@@ -186,6 +186,7 @@ void App::startPrivateStream(const std::string& assistantId, const std::string& 
     config.tools.clear();
     config.systemPrefix.clear();
   }
+  applyOutputControls(config);
   config.maxRounds = std::max(1, settings().extra.value("mcpMaxRounds", 8));
   lastPayload = payload;
   config.transport = backendTransport(backend);

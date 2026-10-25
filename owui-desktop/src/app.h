@@ -12,6 +12,7 @@
 #include <set>
 
 #include "core/accessibility.h"
+#include "core/outputctl.h"
 #include "core/pool.h"
 #include "core/readingmode.h"
 #include "core/rerank.h"
@@ -841,6 +842,13 @@ class App {
   accessibility::Prefs accessibilityPrefs() const;
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
+
+  // --- grammar / tool-choice controls (output_controls.cpp) -----------------
+  outputctl::Controls outputControls() const;            // chat.raw["outputControls"]
+  void setOutputControls(const outputctl::Controls& c);
+  void applyOutputControls(agents::LoopConfig& config);   // format, grammar, tool_choice, nudge
+  void drawOutputControlsSection(float width, bool* changed);
+  bool openSamplingPanel = false;   // the palette asks the chat header to open ##chatparams
 
   // --- multi-server pool (backend_pool.cpp) ---------------------------------
   pool::Prefs poolPrefs() const;

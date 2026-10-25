@@ -1763,3 +1763,36 @@ at the next probe (the probe is a GET, not a chat), so it is retried first and f
 over again each time - the failover cost, not an outage. Not covered: round-robin and
 least-loaded beyond the self-test, API-keyed members, and OpenAI-kind members in the
 pool (the union path ran only against Ollama).
+
+2026-10-25 80 (grammar / tool-choice controls): `src/core/outputctl.*` (Controls <->
+chat.raw["outputControls"]: mode free | json | grammar, grammar text, toolChoice auto |
+none | required | tool:<name>; `validateGrammar` - rules `name ::= body` with
+continuation lines and # comments, root required, references resolved, quotes / classes
+/ parens balanced per rule; `openaiToolChoice` / `anthropicToolChoice` wire shapes;
+`nudge` - the system line for backends without a tool_choice and for JSON mode;
+`applyToOllamaPayload`; `summary`). `LoopConfig.extra` carries top-level fields into
+every tool-loop request, tool_choice only on the first round so a forced call is
+followed by a free answer; `openaiRequest` passes `grammar` and `tool_choice` through,
+`anthropicRequest` maps tool_choice (required -> any, forced -> tool), the Ollama branch
+of `streamChat` strips both. `src/output_controls.cpp`: `outputControls` /
+`setOutputControls`, `applyOutputControls(LoopConfig&)` (format json, extra fields,
+tools cleared for none, nudge appended to the system prefix) called in the private-chat
+and MCP tool streams, the server payload gets response_format json_object when no
+schema is on, grammar, tool_choice (tool_ids dropped for none) and the system line, the
+"Output and tools" block at the end of the sampling panel (radios, grammar box with the
+live verdict, tool-choice combo listing the connected MCP tools, notes on where each
+field is honoured; disabled while structured output's schema is on), gear highlight
+through `hasSamplingParams`, a palette entry that opens the panel. `--outputtest` runs
+14 offline checks (the backends self-test still passes). Verified on a scratch Open
+WebUI 0.12.3 with qwen3:8b: choosing GBNF and typing `root ::= answer` showed "rule
+`root` refers to `answer`, which is not defined"; adding `answer ::= "yes" | "no"`
+showed "Grammar ok: 2 rules" and the summary "GBNF (2 rules)"; switching to JSON object
+and asking for the moon's name, radius and three facts through the server returned a
+bare JSON object (the Traffic tab's copied request body carried
+response_format {"type":"json_object"} and the system line; the server's chat record
+held outputControls); a new private chat on direct Ollama in JSON mode answered the
+France question with a JSON object through the tool loop's `format`. One defect fixed
+on the way: a chosen mode with an empty grammar did not count as active and was never
+stored, so the radio snapped back. Not covered: tool choice beyond the self-test (no
+MCP server on the scratch home), the grammar against a real llama.cpp server, and
+Anthropic.

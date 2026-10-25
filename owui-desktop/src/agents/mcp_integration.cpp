@@ -540,6 +540,7 @@ void App::startToolStream(const std::string& assistantId, const std::string& mod
 
   Json payload = buildCompletionPayload(assistantId, model);
   agents::LoopConfig config = baseToolConfig(model);
+  applyOutputControls(config);
   config.messages = payload["messages"];
   config.maxRounds = std::max(1, settings().extra.value("mcpMaxRounds", 8));
 

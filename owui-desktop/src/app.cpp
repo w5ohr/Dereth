@@ -798,6 +798,25 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
   if (!activeToolIds.empty()) payload["tool_ids"] = activeToolIds;
   if (!chat.params.empty()) payload["params"] = chat.params;
   if (!responseFormat.is_null()) payload["response_format"] = responseFormat;
+  // Grammar / tool-choice controls: JSON mode when no schema is on (the
+  // server turns json_object into Ollama's format), the grammar and the
+  // tool choice as top-level fields (OpenAI-style models), the system line
+  // for the rest.
+  {
+    const outputctl::Controls oc = outputControls();
+    if (outputctl::active(oc)) {
+      if (responseFormat.is_null() && oc.mode == "json") payload["response_format"] = Json{{"type", "json_object"}};
+      if (oc.mode == "grammar" && !core::trim(oc.grammar).empty()) payload["grammar"] = oc.grammar;
+      if (oc.toolChoice == "none") payload.erase("tool_ids");
+      else if (oc.toolChoice != "auto") payload["tool_choice"] = outputctl::openaiToolChoice(oc.toolChoice);
+      std::vector<std::string> names;
+      for (const auto& spec : mcpToolSpecs()) names.push_back(spec.name);
+      const std::string note = outputctl::nudge(oc, names);
+      if (!note.empty() && (oc.mode != "json" || responseFormat.is_null())) {
+        payload["messages"].insert(payload["messages"].begin(), Json{{"role", "system"}, {"content", note}});
+      }
+    }
+  }
   return payload;
 }
 

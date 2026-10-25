@@ -10,6 +10,7 @@
 #include <random>
 
 #include "core/common.h"
+#include "core/outputctl.h"
 #include "imgui_stdlib.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -30,7 +31,7 @@ bool App::hasSamplingParams() const {
   for (auto it = chat.params.begin(); it != chat.params.end(); ++it) {
     if (it.key() != "system") return true;
   }
-  return false;
+  return outputctl::active(outputControls());
 }
 
 void App::drawSamplingPanel() {
@@ -202,6 +203,8 @@ void App::drawSamplingPanel() {
     else chat.params["stop"] = list;
     changed = true;
   }
+
+  drawOutputControlsSection(width, &changed);
 
   ImGui::Separator();
   ImGui::SetNextItemWidth(200);

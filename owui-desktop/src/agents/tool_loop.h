@@ -61,6 +61,7 @@ struct LoopConfig {
   int maxRounds = 8;
   int maxToolResultChars = 24000;
   Json format;                     // Ollama `format`: "json" or a JSON schema; null = free text
+  Json extra = Json::object();     // more top-level fields (grammar, tool_choice); tool_choice only on the first round
   // When set, every request goes through this instead of the server passthrough
   // / direct Ollama pair: a direct backend (core/backends) speaking the same
   // Ollama NDJSON dialect. Nothing then touches the Open WebUI server.

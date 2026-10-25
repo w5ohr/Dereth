@@ -206,6 +206,12 @@ LoopResult runToolLoop(api::Client& api, const std::string& directOllamaUrl, con
     if (!tools.empty()) payload["tools"] = tools;
     if (config.options.is_object() && !config.options.empty()) payload["options"] = config.options;
     if (!config.format.is_null()) payload["format"] = config.format;
+    if (config.extra.is_object()) {
+      for (const auto& [key, value] : config.extra.items()) {
+        if (key == "tool_choice" && round > 0) continue;   // the forced call happened; let the model answer
+        payload[key] = value;
+      }
+    }
 
     std::string roundContent;
     Json toolCalls = Json::array();

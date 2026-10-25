@@ -695,6 +695,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   members'. "Check now" re-probes; the card shows where the last request went.
   `Open WebUI --pooltest` covers the preferences, the probe parser, the three
   routing orders and the health text.
+- **Grammar and tool-choice controls:** the sampling panel (header gear)
+  ends with "Output and tools" for the chat: Free text, JSON object or a
+  GBNF grammar, and a tool choice of Auto, None, Required or "Force <tool>"
+  for every connected MCP tool. JSON mode sends Ollama `format: json` /
+  `response_format: json_object` plus a system line for models that only
+  follow the prompt; the grammar box validates as you type (every rule
+  `name ::= ...`, a `root`, no undefined references, balanced quotes and
+  brackets) and goes out as `grammar`, which llama.cpp-style servers honour
+  and Ollama ignores; the tool choice goes out as `tool_choice` to OpenAI-
+  and Anthropic-style backends, while on Ollama the model is told to call
+  the tool in a system line and the request after the call runs free. None
+  leaves tools out altogether. The choice is saved in the chat and shows in
+  the gear's highlight. `Open WebUI --outputtest` covers the record, the
+  validator, the wire shapes and the backend mappers.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

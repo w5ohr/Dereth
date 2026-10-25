@@ -180,6 +180,10 @@ void App::drawChatPane() {
                       hasSamplingParams() ? palette.accent : 0)) {
       ImGui::OpenPopup("##chatparams");
     }
+    if (openSamplingPanel) {
+      ImGui::OpenPopup("##chatparams");
+      openSamplingPanel = false;
+    }
     drawSamplingPanel();
     ImGui::SameLine();
     if (icons::button("structured", icons::Icon::Code, "Structured output (JSON schema)", 0.0f,
