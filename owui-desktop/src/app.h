@@ -217,6 +217,7 @@ struct Stream {
   // the loop polls between steps.
   Json agentRun;
   std::atomic<bool> paused{false};
+  bool resumed = false;         // re-attached after a relaunch: polled from the server
 };
 
 // A renderable code block from a reply (HTML, SVG or Mermaid), shown live in
@@ -435,6 +436,22 @@ class App {
   void drawPluginsSection(float width);
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
+
+  // --- stream recovery (recovery.cpp) ---------------------------------------
+  // Replies in flight are snapshotted to support/inflight.json; on launch a
+  // server-driven one is re-attached, a client-driven one keeps its partial.
+  void saveInflight();
+  void clearInflight();
+  void recoverInflight();
+  void tickRecovery();
+  struct PendingResume {
+    std::string chatId;
+    std::string messageId;
+    Json record;
+    bool resume = false;
+  } pendingResume_;
+  double inflightSavedAt = 0.0;
+  bool inflightChecked_ = false;
 
   // --- redaction (redaction.cpp) --------------------------------------------
   // Secrets and personal data in an outgoing prompt are reviewed and masked

@@ -1105,10 +1105,12 @@ void App::stopAllStreams() {
   }
   for (auto& [id, message] : chat.messages) message.streaming = false;
   streams_.clear();
+  clearInflight();
 }
 
 void App::pollStreams() {
   if (streams_.empty()) return;
+  saveInflight();
   std::vector<std::shared_ptr<Stream>> keep;
   for (auto& stream : streams_) {
     bool finished = false;
@@ -1190,6 +1192,7 @@ void App::pollStreams() {
     }
   }
   streams_.swap(keep);
+  if (streams_.size() != keep.size() || streams_.empty()) clearInflight();
 }
 
 void App::afterCompletion(const std::string& assistantId) {
@@ -1435,6 +1438,11 @@ void App::frame() {
       }
     }
   }
+  if (signedIn_ && !chatsLoading && !inflightChecked_) {
+    inflightChecked_ = true;
+    recoverInflight();
+  }
+  tickRecovery();
   if (signedIn_ && !startChatId.empty() && !chatsLoading) {
     // --chat: this window was opened for one conversation.
     const std::string id = startChatId;

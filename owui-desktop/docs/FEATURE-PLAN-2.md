@@ -623,3 +623,25 @@ after a relaunch; a second prompt with a phone, a card and an IP opened the shee
 three rows, and Send masked produced placeholders on the server. Not covered:
 attachments and pasted files are not scanned (only the prompt text), and a secret the
 model needs verbatim (an API key for a tool) has to be sent "as is".
+
+2026-10-24 IX (137 stream recovery): `src/recovery.cpp`. `pollStreams` writes every
+live stream (chat, message, model, task ids, content and reasoning so far, whether it is
+a server task) to support/inflight.json at most once a second and removes the file when
+nothing is streaming (`stopAllStreams` too). On launch, once signed in, `recoverInflight`
+reads the records (younger than a day), fetches each chat and looks at the message: done
+on the server -> toast "A reply in '...' finished while the app was closed" (and the chat
+opens when none is); not done and it was a server task -> the chat opens and
+`tickRecovery` attaches a resumed Stream that polls the message every 1.5 s until the
+server marks it done (or the task list is empty and the text stopped growing, or 15
+minutes), so the usual pollStreams / afterCompletion path finishes it (save, title,
+chips); not done and client-driven -> the saved partial is kept in the message with a
+note ("the text so far was kept - use Continue to let the model finish it") and saved.
+New route GET /api/tasks/chat/{id}. Verified against a scratch server with qwen3:8b: a
+1200-word story was killed with `kill -9` 11 s in (inflight.json: socket task, 3975
+chars of content, 1452 of reasoning); on relaunch the chat opened on its own, the
+resumed stream polled (snapshots logged), the full 972-word reply showed and the title
+("Desert Caravan") was generated after it finished; a first attempt with a 400-word
+story finished in 15 s, before the kill, and correctly left no record. Not exercised:
+the client-driven branch (a Continue run finished within the 6 s before the kill) and
+the "finished while closed" toast on its own (the resumed poll covered that case
+because the server finished during the relaunch gap).

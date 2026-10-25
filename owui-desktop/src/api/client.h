@@ -136,6 +136,7 @@ class Client {
   Result completion(const Json& payload);           // non-streaming
   Result chatCompleted(const Json& payload);        // POST /api/chat/completed
   Result stopTask(const std::string& taskId);
+  Result chatTasks(const std::string& chatId);      // GET /api/tasks/chat/{id} -> {task_ids}
   Result generateTitle(const Json& payload);
   Result generateTags(const Json& payload);
   Result generateFollowUps(const Json& payload);

@@ -248,6 +248,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Stream recovery:** every reply in flight is snapshotted to a local file as
+  it arrives. After a crash or a quit mid-reply, the next launch checks the
+  server: a reply it finished meanwhile is reported, one its background task
+  is still writing is re-attached and followed to the end, and one only this
+  client was driving (Continue, tool or agent loops) keeps the text that had
+  arrived with a note and the Continue button to finish it.
 - **Redaction:** every prompt is checked before it leaves the Mac for API
   keys, tokens, private keys, passwords, card numbers (Luhn-checked), SSNs,
   IBANs, emails, phone numbers and IP addresses. A review sheet lists the

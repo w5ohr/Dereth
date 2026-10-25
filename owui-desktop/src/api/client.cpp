@@ -374,6 +374,9 @@ Result Client::chatCompleted(const Json& payload) { return post("/api/chat/compl
 Result Client::stopTask(const std::string& taskId) {
   return post("/api/tasks/stop/" + taskId);
 }
+Result Client::chatTasks(const std::string& chatId) {
+  return get("/api/tasks/chat/" + chatId);
+}
 Result Client::generateTitle(const Json& payload) {
   return post("/api/v1/tasks/title/completions", payload);
 }
