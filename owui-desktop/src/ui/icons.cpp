@@ -264,6 +264,16 @@ void draw(ImDrawList* dl, Icon icon, ImVec2 c, float s, ImU32 col, float t) {
                   q * 0.3f, t);
       line(dl, ImVec2(c.x, c.y + q * 0.5f), ImVec2(c.x, c.y + h), col, t);
       break;
+    case Icon::Tree:
+      // One node above two: a root with its branches.
+      dl->AddCircle(ImVec2(c.x, c.y - h * 0.65f), q * 0.5f, col, 0, t);
+      dl->AddCircle(ImVec2(c.x - h * 0.7f, c.y + h * 0.65f), q * 0.5f, col, 0, t);
+      dl->AddCircle(ImVec2(c.x + h * 0.7f, c.y + h * 0.65f), q * 0.5f, col, 0, t);
+      line(dl, ImVec2(c.x, c.y - h * 0.65f + q * 0.5f), ImVec2(c.x, c.y), col, t);
+      line(dl, ImVec2(c.x - h * 0.7f, c.y), ImVec2(c.x + h * 0.7f, c.y), col, t);
+      line(dl, ImVec2(c.x - h * 0.7f, c.y), ImVec2(c.x - h * 0.7f, c.y + h * 0.65f - q * 0.5f), col, t);
+      line(dl, ImVec2(c.x + h * 0.7f, c.y), ImVec2(c.x + h * 0.7f, c.y + h * 0.65f - q * 0.5f), col, t);
+      break;
     case Icon::Camera:
       // Body with a raised viewfinder bump and a lens.
       dl->AddRect(ImVec2(c.x - h, c.y - q * 0.4f), ImVec2(c.x + h, c.y + h * 0.8f), col, q * 0.3f, t);

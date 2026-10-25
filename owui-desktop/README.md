@@ -186,6 +186,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   the match shortens the passage from the front until it finds it). Page
   controls, "Find passage again", the excerpt popup and "Open in Preview";
   files are cached under the app's cache folder.
+- **Conversation tree:** the tree icon in the chat header opens a map of
+  every branch beside the transcript - one row per turn, siblings side by
+  side, the branch you are reading highlighted. Click a node to jump there
+  (switching branches when needed), hover for the full text, right-click to
+  delete a message or prune its whole subtree, or prune every dead branch at
+  once; pruning removes the messages from the server too.
 - **Structured output:** the braces icon in the chat header takes a JSON
   schema for the chat (or a starting point: list of records, classification,
   key facts, or one inferred from an example). Every reply is requested in

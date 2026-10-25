@@ -96,7 +96,7 @@ void App::drawChatPane() {
     ImGui::PopStyleColor();
 
     // Right-hand actions.
-    const float actionsWidth = 407.0f;
+    const float actionsWidth = 444.0f;
     ImGui::SameLine(ImGui::GetWindowWidth() - actionsWidth);
     if (!streams_.empty()) {
       widgets::spinner("##busy", 8.0f, 2.0f);
@@ -115,6 +115,11 @@ void App::drawChatPane() {
     if (icons::button("compare", icons::Icon::Branch, "Compare sibling answers side by side",
                       0.0f, compareMode ? palette.accent : 0)) {
       compareMode = !compareMode;
+    }
+    ImGui::SameLine();
+    if (icons::button("treeview", icons::Icon::Tree, "Conversation tree", 0.0f,
+                      showTree ? palette.accent : 0)) {
+      showTree = !showTree;
     }
     ImGui::SameLine();
     if (icons::button("pinsrail", icons::Icon::Star, "Pinned messages", 0.0f,
@@ -163,6 +168,7 @@ void App::drawChatPane() {
       if (ImGui::MenuItem("Open in new window", "Shift+Cmd+N")) openChatInNewWindow(chat.id, false);
       if (ImGui::MenuItem("Open as floating mini window")) openChatInNewWindow(chat.id, true);
       if (ImGui::MenuItem(floating ? "Stop floating on top" : "Float on top", "Shift+Cmd+T")) toggleFloating();
+      if (ImGui::MenuItem("Conversation tree", nullptr, showTree)) showTree = !showTree;
       ImGui::Separator();
       if (ImGui::MenuItem("Download chat as JSON") && !chat.id.empty()) {
         const std::string path = platform::saveFile(chat.title + ".json");
@@ -281,6 +287,7 @@ void App::drawChatPane() {
   const float sideWidth = showArtifacts ? 540.0f
                           : showDocument ? 560.0f
                           : !referenceChatId.empty() ? 420.0f
+                          : showTree ? 380.0f
                           : (showPins ? 260.0f : 0.0f);
   ImGui::BeginChild("##messagearea", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
   ImGui::BeginChild("##messages", ImVec2(sideWidth > 0.0f ? -sideWidth - 8.0f : 0.0f, 0),
@@ -714,6 +721,9 @@ void App::drawChatPane() {
   } else if (!referenceChatId.empty()) {
     ImGui::SameLine();
     drawReferenceColumn(sideWidth);
+  } else if (showTree) {
+    ImGui::SameLine();
+    drawTreeColumn(sideWidth);
   } else if (showPins) {
     ImGui::SameLine();
     drawPinnedRail(sideWidth);

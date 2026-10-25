@@ -427,6 +427,14 @@ class App {
   std::map<std::string, int> structuredRetries;           // per user-message id
   std::map<std::string, std::string> structuredHints;     // violations for the retry prompt
 
+  // --- conversation tree (tree_view.cpp) ------------------------------------
+  // A map of every branch beside the transcript: click a node to jump, prune
+  // the branches the conversation left behind.
+  void drawTreeColumn(float width);
+  void jumpToNode(const std::string& id);
+  void pruneSubtree(const std::string& id);     // the node and everything under it
+  void pruneDeadBranches();                     // every subtree off the current path
+
   // --- fan-out (fanout.cpp) -------------------------------------------------
   // One prompt to several models at once; the answers sit side by side until
   // one is kept as the branch the conversation continues from.
@@ -508,6 +516,7 @@ class App {
   int chatSearchIndex = 0;
   bool compareMode = false;
   bool showPins = false;
+  bool showTree = false;                 // conversation tree column
   std::string focusedMessageId;
   std::map<std::string, MessageTiming> timings;
   bool voiceMode = false;

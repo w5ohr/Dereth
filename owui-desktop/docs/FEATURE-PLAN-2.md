@@ -455,3 +455,29 @@ its renderer is the same `drawStructuredValue` path. Not delivered: a schema lib
 across chats, `pattern`-constrained generation (Ollama's grammar ignores some
 keywords - the validator catches them and re-asks), the MCP tool-loop path (direct
 Ollama, no `format` yet).
+
+2026-10-24 I (53 branch tree view): `src/tree_view.cpp`, a side column (380 pt, header
+tree icon / More menu / palette "Toggle conversation tree") drawing the whole message
+tree on an ImDrawList canvas: tidy top-down layout (subtree widths summed, siblings in
+creation order, roots by timestamp), bezier edges, two-line nodes (who + sibling
+position, opening words with ellipsis), the current branch and leaf highlighted,
+tooltips with 400 chars, zoom -/+ / Fit / Current, drag-to-pan, and a stats line
+(messages, leaves, dead ends). Click = `jumpToNode` (on the current branch it scrolls
+the transcript; off it the branch through that node becomes current down to its newest
+leaf). Right-click = jump / copy / delete this message or prune this branch;
+"Prune N dead branches" (confirm popup) removes every subtree off the current path.
+Pruning deletes each message on the server (`DELETE /chats/{id}/messages/{mid}`, since
+the server's body merge keeps vanished messages) and saves the chat only after those
+deletes, because a server-side delete moves currentId to the deleted message's parent.
+The zoom fits the column whenever the node count changes (0.5-1.0), nodes keep two
+text lines at any zoom (ImGui 1.92 sized PushFont). Verified against a scratch server
+with a seeded ten-message, four-leaf Lisbon chat: the tree drew fitted with the stats
+"10 messages - 4 leaves - 3 dead ends"; clicking the dead "A slower version" leaf
+switched the transcript to that branch and re-highlighted the path; the context menu
+showed Jump / Copy / Delete; "Delete this message" dropped the count to 9 with a toast
+and the server lost exactly that message. Not GUI-verified: "Prune N dead branches"
+(the user had the machine; it loops the same `pruneSubtree`) and the delete-before-save
+ordering (built after the single-delete run showed the server's currentId moved).
+Observation, not changed: any prompt with two or more answers renders as fan-out
+columns in the transcript until one is kept (the fan-out item's design), so a seeded
+or regenerated branch shows "2 answers - keep one" even when it was never a fan-out.
