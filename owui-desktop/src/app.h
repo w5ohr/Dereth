@@ -761,6 +761,12 @@ class App {
   void drawRetrievalColumn(float width);
   void reaskWithPassages(const std::string& messageId);
 
+  // --- playgrounds (playground_pane.cpp) -----------------------------------
+  bool showPlayground = false;
+  void openPlayground(const std::string& code, const std::string& language);   // "" code = the sample for that kind
+  void runPlayground();
+  void drawPlayground();
+
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...
   // are filled in when a prompt is sent; inputs are asked for in a form first.

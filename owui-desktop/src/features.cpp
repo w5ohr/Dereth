@@ -379,6 +379,7 @@ void App::drawPalette() {
   add("Read this chat aloud (every reply, in order)", "command", [this] { readChatAloud(); });
   add("Stop reading aloud", "command", [this] { stopReading(); });
   add("Text-to-speech (engine, Mac voice, rate)", "settings", [this] { pane = Pane::Settings; });
+  add("Playground (try a regex, SQL or jq locally)", "command", [this] { openPlayground("", ""); });
   add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
     std::string last;
     for (const std::string& id : chat.branch()) {

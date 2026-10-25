@@ -552,6 +552,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   the server's own retrieval is skipped for that turn. The palette opens it
   for the last reply. `Open WebUI --retrievaltest` covers the parsing,
   ranking, marks, stats and the re-ask prompt.
+- **Playgrounds:** a regex, SQL or jq block in a reply (tagged, or
+  recognisable by shape) gets a "Try it" button that opens a playground: the
+  code on the left, your input on the right, and the result below - all run
+  on this Mac. Regex (std::regex, bare or `/pattern/flags`) lists every match
+  with its span and capture groups and applies an optional replacement; SQL
+  runs in an in-memory SQLite that holds your CSV as a typed table named
+  after the file (or read-only against a .sqlite/.db file you load), showing
+  each statement's rows, the schema, timing and changes; jq runs the system
+  or Homebrew `jq` in a sandbox over the JSON you paste or load. Sample data
+  is one click away, Cmd+Enter runs, and the result can be copied as text or
+  Markdown or sent to the composer with "Ask about the result". The palette
+  opens an empty playground. `Open WebUI --playgroundtest` covers kind
+  detection, the regex and SQL runners, CSV parsing, the jq command line and
+  the formatters.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

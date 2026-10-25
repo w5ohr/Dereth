@@ -1449,3 +1449,29 @@ view), Copy passages, Clear marks, the palette command, and the re-ask reply its
 model (qwen2.5-coder:3b-base) answered with the server error "does not support tools"
 (Ollama refused the server's tool-enabled request - a model limitation, not the
 re-ask path), so a real answer from pinned passages is still to be seen.
+
+2026-10-25 99 (playgrounds): `src/core/playground.*` (`kindFor` from the language tag or
+the code's shape - SELECT/WITH/..., /.../flags, a leading jq path; `runRegex` with
+std::regex ECMAScript, slash-form flags i/m, every match with span and groups, optional
+replacement, errors explained incl. the lookbehind gap; `parseCsv` with quotes and
+tab/semicolon detection; `identifier`; `runSql` in an in-memory SQLite that loads the CSV
+as a typed table (INTEGER/REAL/TEXT inferred, empty cells NULL) or opens a SQLite file
+read-only, runs every statement, caps rows, reports schema/changes/ms; `jqPath`,
+`jqAvailable`, `jqArgv`; `tableMarkdown`, `tableCsv`, `matchesText`; sample inputs and
+code per kind). `src/playground_pane.cpp`: "Try it" under matching code blocks (before
+Run), a modal with kind combo, Load CSV/SQLite/JSON/text, Sample data, Run (Cmd+Enter),
+code and input editors (replacement field for regex, -r for jq), results as tables or
+mono text, Copy result / Copy as Markdown / Ask about the result (fills the composer) /
+Close; jq runs through native::runProcess sandboxed with the input written to
+support/playground/input.json. Palette: "Playground (try a regex, SQL or jq locally)".
+`--playgroundtest` runs 15 offline checks. Verified on a scratch server with a seeded
+reply holding sql, regex and jq blocks: every block showed "Try it"; the SQL one opened
+the modal with the sample CSV and Run produced 3 rows in 0.6 ms with the inferred schema
+line, Copy as Markdown put the table on the clipboard; switching the kind to Regex and
+running listed 3 matches with spans and $1-$3; jq produced the two filtered objects
+from the sandboxed jq. Not covered: Load file (open panel), a SQLite file in the GUI
+(self-test only), the replacement field, Ask about the result, and the palette command.
+Also in this commit: `core/keychain.mm` logs every load/save/erase under OWUI_DEBUG (and
+the call stack with OWUI_KEYCHAIN_TRACE=1) - added while chasing the keychain prompt seen
+in test runs; an instrumented run made no keychain call at all, so that prompt was a
+stale one from an earlier instance.

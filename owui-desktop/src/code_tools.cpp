@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "app.h"
+#include "core/playground.h"
 
 #include "plugins/plugin_host.h"
 #include "core/async.h"
@@ -1356,6 +1357,11 @@ void App::drawCodeBlockActions(const std::string& code, const std::string& langu
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rendered by the %s plugin", renderer.pluginName.c_str());
     ImGui::PopID();
+    ImGui::SameLine();
+  }
+  if (playground::kindFor(language, code) != playground::Kind::None) {
+    if (widgets::ghostButton("Try it")) openPlayground(code, language);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Run this %s locally against sample data, a file or your own input", playground::kindName(playground::kindFor(language, code)));
     ImGui::SameLine();
   }
   const bool runBusy = !runnable || (run && run->running);

@@ -1,5 +1,7 @@
 #include "core/keychain.h"
 
+#include "core/common.h"
+
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
 
@@ -16,9 +18,17 @@ NSDictionary* baseQuery(const std::string& account) {
   };
 }
 
+void trace(const char* op, const std::string& account) {
+  core::debugLog("keychain: %s %s", op, account.c_str());
+  if (std::getenv("OWUI_KEYCHAIN_TRACE")) {
+    for (NSString* line in [NSThread callStackSymbols]) core::debugLog("  %s", line.UTF8String);
+  }
+}
+
 }  // namespace
 
 bool save(const std::string& account, const std::string& secret) {
+  trace("save", account);
   erase(account);
   NSMutableDictionary* item = [baseQuery(account) mutableCopy];
   item[(__bridge id)kSecValueData] =
@@ -29,6 +39,7 @@ bool save(const std::string& account, const std::string& secret) {
 }
 
 std::string load(const std::string& account) {
+  trace("load", account);
   NSMutableDictionary* query = [baseQuery(account) mutableCopy];
   query[(__bridge id)kSecReturnData] = @YES;
   query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
@@ -40,6 +51,7 @@ std::string load(const std::string& account) {
 }
 
 void erase(const std::string& account) {
+  trace("erase", account);
   SecItemDelete((__bridge CFDictionaryRef)baseQuery(account));
 }
 
