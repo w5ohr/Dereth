@@ -792,7 +792,7 @@ Json App::buildCompletionPayload(const std::string& assistantId, const std::stri
       {"stream_options", Json{{"include_usage", true}}},
   };
   if (!chat.id.empty()) payload["chat_id"] = chat.id;
-  if (!fileRefs.empty()) payload["files"] = fileRefs;
+  if (!fileRefs.empty() && !retrievalBypass_.count(assistantId)) payload["files"] = fileRefs;   // a re-ask carries its passages inline
   if (!activeToolIds.empty()) payload["tool_ids"] = activeToolIds;
   if (!chat.params.empty()) payload["params"] = chat.params;
   if (!responseFormat.is_null()) payload["response_format"] = responseFormat;
@@ -1082,6 +1082,10 @@ void App::sendMessage(const std::string& textIn) {
     chat.messages[user.id].childrenIds.push_back(assistant.id);
     chat.messages[assistant.id] = assistant;
     pending.emplace_back(assistant.id, model);
+  }
+  if (retrievalBypassNext_) {
+    for (const auto& [assistantId, model] : pending) retrievalBypass_.insert(assistantId);
+    retrievalBypassNext_ = false;
   }
   chat.currentId = pending.front().first;
 

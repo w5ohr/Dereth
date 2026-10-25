@@ -10,6 +10,8 @@
 #include <condition_variable>
 #include <map>
 #include <set>
+
+#include "core/retrieval.h"
 #include <memory>
 #include <mutex>
 #include <string>
@@ -746,6 +748,18 @@ class App {
   void tickTts();
   void drawReadAloudButton(const std::string& messageId, const std::string& content);
   void drawTtsSection(float width);
+
+  // --- retrieval inspector (retrieval_inspector.cpp) -----------------------
+  bool showRetrieval = false;            // side column for retrievalMessageId's chunks
+  std::string retrievalMessageId;
+  std::set<std::string> retrievalBypass_;   // assistant ids whose request carries no file refs (re-ask)
+  bool retrievalBypassNext_ = false;
+  void toggleRetrievalColumn(const std::string& messageId);
+  retrieval::Marks retrievalMarks(const std::string& messageId) const;   // chat.raw["desktop_retrieval"][id]
+  void saveRetrievalMarks(const std::string& messageId, const retrieval::Marks& marks);
+  void drawRetrievalButton(const Message& message);
+  void drawRetrievalColumn(float width);
+  void reaskWithPassages(const std::string& messageId);
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

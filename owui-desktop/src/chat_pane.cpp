@@ -307,6 +307,7 @@ void App::drawChatPane() {
   const float sideWidth = showArtifacts ? 540.0f
                           : showDocument ? 560.0f
                           : !referenceChatId.empty() ? 420.0f
+                          : showRetrieval ? 440.0f
                           : showTree ? 380.0f
                           : (showPins ? 260.0f : 0.0f);
   ImGui::BeginChild("##messagearea", ImVec2(0, -composerHeight), ImGuiChildFlags_None);
@@ -687,6 +688,7 @@ void App::drawChatPane() {
           widgets::toast(widgets::ToastLevel::Success, "Copied");
         }
         if (!isUser) drawCitedCopyButton(message);   // footnotes / BibTeX when the reply has sources
+        if (!isUser) drawRetrievalButton(message);   // chunks, relevance, pin / exclude, re-ask
         ImGui::SameLine();
         if (icons::button("quote", icons::Icon::Chat, "Quote in a reply")) quoteReply(message);
         ImGui::SameLine();
@@ -847,6 +849,9 @@ void App::drawChatPane() {
   } else if (!referenceChatId.empty()) {
     ImGui::SameLine();
     drawReferenceColumn(sideWidth);
+  } else if (showRetrieval) {
+    ImGui::SameLine();
+    drawRetrievalColumn(sideWidth);
   } else if (showTree) {
     ImGui::SameLine();
     drawTreeColumn(sideWidth);

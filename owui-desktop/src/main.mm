@@ -470,6 +470,7 @@ int runEditorSelfTest();
 int runCiteSelfTest();
 int runTtsSelfTest();
 int runTrafficSelfTest();
+int runRetrievalSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -506,6 +507,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--citetest") return runCiteSelfTest();
     if (std::string(argv[i]) == "--ttstest") return runTtsSelfTest();
     if (std::string(argv[i]) == "--traffictest") return runTrafficSelfTest();
+    if (std::string(argv[i]) == "--retrievaltest") return runRetrievalSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

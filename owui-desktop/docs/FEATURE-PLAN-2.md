@@ -1424,3 +1424,28 @@ bodies switch. Note: during this run two macOS dialogs (a keychain access prompt
 com.davidcochran.owui-desktop and an Automation prompt) stayed on screen after the app
 exited; no code path from the Tools pane reads the keychain and OWUI_NO_KEYCHAIN=1 was
 set, so their origin is unconfirmed - they were left for the user.
+
+2026-10-25 104 (retrieval inspector): `src/core/retrieval.*` (Chunk; `fromSources`
+flattens Open WebUI's sources - document/metadata/distances aligned by index, names from
+source or metadata, pages 1-based, file ids, URLs, relevance clamped to 0..1 or -1 when
+absent, stable ids; `ranked`; `Marks` pin/exclude sets that are mutually exclusive and
+round-trip JSON; `stats`; `passagesForReask` - pinned wins, else everything not excluded,
+nothing marked = nothing; `reaskPrompt` quotes the passages numbered with page and asks
+for an answer from those alone; `copyText`, `relevanceLabel`).
+`src/retrieval_inspector.cpp`: a layers button under any reply with chunks opens a
+440 px side column (ranked chunks with relevance bars, More/Less, Pin, Exclude, Open via
+openCitation, Copy passages, Clear marks, Re-ask); marks live in
+chat.raw["desktop_retrieval"][messageId] and save with the chat; `reaskWithPassages`
+sends the parent question wrapped by reaskPrompt with `retrievalBypassNext_` set, which
+sendMessage turns into the new assistant ids in `retrievalBypass_`, and
+buildCompletionPayload drops `files` for those ids. Palette: "Retrieval inspector for the
+last reply". `--retrievaltest` runs 9 offline checks. Verified on a scratch server with a
+seeded reply carrying four chunks from two sources (scores 0.91/0.38/0.62/0.74): the
+column listed them ranked 91/74/62/38 with bars, mean 66% / best 91%; Pin and Exclude
+toggled, highlighted and were saved on the server's chat record; Re-ask sent the
+question with the one pinned passage quoted, and the traffic inspector's HAR showed the
+POST /api/chat/completions body without a `files` key. Not covered: Open (document
+view), Copy passages, Clear marks, the palette command, and the re-ask reply itself: the seeded chat's
+model (qwen2.5-coder:3b-base) answered with the server error "does not support tools"
+(Ollama refused the server's tool-enabled request - a model limitation, not the
+re-ask path), so a real answer from pinned passages is still to be seen.

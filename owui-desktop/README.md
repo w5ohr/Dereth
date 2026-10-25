@@ -542,6 +542,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   stay in memory; Capture bodies can be turned off. `Open WebUI
   --traffictest` covers masking, packet naming, filtering, the summary, the
   waterfall geometry, HAR and curl.
+- **Retrieval inspector:** a reply that came with retrieved chunks gets a
+  layers button under it that opens a side column listing every chunk the
+  server retrieved - source, page, the server's relevance score as a bar,
+  the passage - ranked best first, with a mean/best summary. Pin the
+  passages the answer should rest on or exclude the noise (marks are saved
+  with the chat), open a chunk in the document view, copy the passages, and
+  Re-ask: the question goes back with only the chosen passages quoted and
+  the server's own retrieval is skipped for that turn. The palette opens it
+  for the last reply. `Open WebUI --retrievaltest` covers the parsing,
+  ranking, marks, stats and the re-ask prompt.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

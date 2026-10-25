@@ -379,6 +379,18 @@ void App::drawPalette() {
   add("Read this chat aloud (every reply, in order)", "command", [this] { readChatAloud(); });
   add("Stop reading aloud", "command", [this] { stopReading(); });
   add("Text-to-speech (engine, Mac voice, rate)", "settings", [this] { pane = Pane::Settings; });
+  add("Retrieval inspector for the last reply (chunks, relevance, pin, re-ask)", "command", [this] {
+    std::string last;
+    for (const std::string& id : chat.branch()) {
+      const Message& m = chat.messages.at(id);
+      if (m.role == "assistant" && !m.sources.empty()) last = id;
+    }
+    if (last.empty()) widgets::toastInfo("No reply with sources in this chat");
+    else {
+      pane = Pane::Chat;
+      toggleRetrievalColumn(last);
+    }
+  });
   add("Release the model from memory", "command", [this] { warmModelNow(true); });
   add("Find and pull models (Ollama library, Hugging Face)", "command", [this] { pane = Pane::Tools; });
   add("Sync the vault now (Obsidian)", "command", [this] {
