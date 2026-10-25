@@ -31,6 +31,11 @@ struct ToolSpec {
   std::string tool;          // the server's own tool name
 };
 
+// A streaming chat transport in the Ollama /api/chat dialect: payload in,
+// one parsed NDJSON chunk per onLine call. Return false from onLine to stop.
+using Transport = std::function<api::Result(const Json& payload, const std::function<bool(const Json&)>& onLine,
+                                            const std::atomic<bool>* cancel)>;
+
 struct Call {
   std::string id;
   std::string name;          // qualified name
@@ -56,6 +61,10 @@ struct LoopConfig {
   int maxRounds = 8;
   int maxToolResultChars = 24000;
   Json format;                     // Ollama `format`: "json" or a JSON schema; null = free text
+  // When set, every request goes through this instead of the server passthrough
+  // / direct Ollama pair: a direct backend (core/backends) speaking the same
+  // Ollama NDJSON dialect. Nothing then touches the Open WebUI server.
+  Transport transport;
 };
 
 struct LoopHooks {

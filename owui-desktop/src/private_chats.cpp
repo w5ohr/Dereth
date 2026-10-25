@@ -97,8 +97,8 @@ void App::refreshPrivateChats() {
 }
 
 void App::newPrivateChat() {
-  if (settings().ollamaUrl.empty()) {
-    widgets::toastError("Private chats talk to Ollama directly - set the Ollama URL in Settings first");
+  if (backendList().empty()) {
+    widgets::toastError("Private chats need a direct backend - set the Ollama URL or add one under Settings > Direct backends");
     pane = Pane::Settings;
     return;
   }
@@ -141,7 +141,8 @@ void App::openPrivateChat(const std::string& id) {
   loaded.isPrivate = true;
   loaded.updatedAt = doc->value("updated_at", static_cast<int64_t>(0));
   chat = loaded;
-  if (!chat.models.empty()) selectedModels = chat.models;
+  // A chat on a direct backend keeps its own model; it is not a server model.
+  if (!chat.models.empty() && chat.backendId.empty()) selectedModels = chat.models;
   composer.clear();
   ++composerGeneration;
   restoreDraft();
@@ -160,12 +161,14 @@ void App::deletePrivateChat(const std::string& id) {
 // A private reply: the tool loop straight to Ollama (empty tool list unless
 // MCP tools are on), never the server's completion endpoints.
 void App::startPrivateStream(const std::string& assistantId, const std::string& model) {
-  const std::string directUrl = settings().ollamaUrl;
   auto it = chat.messages.find(assistantId);
-  if (directUrl.empty()) {
+  backends::Backend backend;
+  if (!findBackend(chat.backendId.empty() ? "ollama" : chat.backendId, &backend)) {
     if (it != chat.messages.end()) {
       it->second.streaming = false;
-      it->second.error = "Private chats need a direct Ollama URL (Settings) - nothing was sent.";
+      it->second.error = chat.backendId.empty()
+                             ? "Private chats need a direct Ollama URL (Settings) - nothing was sent."
+                             : "This chat's backend is gone - pick another in the header. Nothing was sent.";
     }
     return;
   }
@@ -185,7 +188,8 @@ void App::startPrivateStream(const std::string& assistantId, const std::string& 
   }
   config.maxRounds = std::max(1, settings().extra.value("mcpMaxRounds", 8));
   lastPayload = payload;
-  lastPayload["transport"] = "ollama /api/chat (direct, private chat)";
+  config.transport = backendTransport(backend);
+  lastPayload["transport"] = backend.name + " (" + backends::kindLabel(backend.kind) + ", direct, private chat)";
   lastPayload["model"] = config.model;
 
   std::map<std::string, std::shared_ptr<mcp::Client>> clients;
@@ -198,7 +202,7 @@ void App::startPrivateStream(const std::string& assistantId, const std::string& 
   const bool autoApprove = settings().extra.value("mcpAutoApprove", false);
   const Json approvals = settings().extra.value("mcpApprovals", Json::object());
 
-  async::runDetached([this, stream, config, clients, byName, autoApprove, approvals, directUrl] {
+  async::runDetached([this, stream, config, clients, byName, autoApprove, approvals] {
     agents::LoopHooks hooks = makeToolHooks(stream, clients, byName, autoApprove, approvals);
     hooks.onDelta = [stream](const std::string& content, const std::string& reasoning) {
       std::lock_guard<std::mutex> lock(stream->mutex);
@@ -207,7 +211,7 @@ void App::startPrivateStream(const std::string& assistantId, const std::string& 
       stream->reasoning += reasoning;
       return !stream->cancel.load();
     };
-    const agents::LoopResult result = agents::runToolLoop(api_, directUrl, config, hooks, &stream->cancel);
+    const agents::LoopResult result = agents::runToolLoop(api_, "", config, hooks, &stream->cancel);
     std::lock_guard<std::mutex> lock(stream->mutex);
     if (!result.ok && !stream->cancel.load()) stream->error = result.error;
     stream->done = true;
@@ -216,7 +220,9 @@ void App::startPrivateStream(const std::string& assistantId, const std::string& 
 
 // A title from the local model, once, after the first reply.
 void App::maybeGeneratePrivateTitle() {
-  if (!chat.isPrivate || chat.title != "Private chat" || settings().ollamaUrl.empty()) return;
+  if (!chat.isPrivate || chat.title != "Private chat") return;
+  backends::Backend backend;
+  if (!findBackend(chat.backendId.empty() ? "ollama" : chat.backendId, &backend)) return;
   std::string firstUser, firstReply;
   for (const std::string& id : chat.branch()) {
     const Message& m = chat.messages.at(id);
@@ -233,16 +239,16 @@ void App::maybeGeneratePrivateTitle() {
                         "no explanation - only the title.";
   config.messages = Json::array({Json{{"role", "user"}, {"content", "User: " + firstUser + "\n\nAssistant: " + firstReply}}});
   config.maxRounds = 1;
+  config.transport = backendTransport(backend);
   const std::string chatId = chat.id;
-  const std::string directUrl = settings().ollamaUrl;
-  async::run([this, config, chatId, directUrl] {
+  async::run([this, config, chatId] {
     std::string text;
     agents::LoopHooks hooks;
     hooks.onDelta = [&](const std::string& content, const std::string&) {
       text += content;
       return true;
     };
-    const agents::LoopResult result = agents::runToolLoop(api_, directUrl, config, hooks, nullptr);
+    const agents::LoopResult result = agents::runToolLoop(api_, "", config, hooks, nullptr);
     if (!result.ok) return;
     std::string title = core::trim(text);
     if (!title.empty() && (title.front() == '"' || title.front() == '\'')) title.erase(0, 1);

@@ -209,6 +209,7 @@ Json ChatDoc::toJson() const {
   out["params"] = params;
   out["timestamp"] = static_cast<int64_t>(core::nowSeconds()) * 1000;
   if (!folderId.empty()) out["folder_id"] = folderId;
+  if (!backendId.empty()) out["desktop_backend"] = backendId;
   return out;
 }
 
@@ -229,6 +230,7 @@ ChatDoc ChatDoc::fromJson(const Json& chat, const std::string& chatId) {
   }
   if (chat.contains("params") && chat["params"].is_object()) doc.params = chat["params"];
   doc.isPrivate = chat.value("desktop_private", false);
+  doc.backendId = chat.value("desktop_backend", "");
   if (chat.contains("folder_id") && chat["folder_id"].is_string()) doc.folderId = chat["folder_id"];
 
   if (chat.contains("history") && chat["history"].is_object()) {
@@ -1004,6 +1006,15 @@ void App::sendMessage(const std::string& textIn) {
     }
   }
 
+  // A private chat on a direct backend answers with the model picked for that
+  // backend, not the server's selection.
+  const bool directPrivate = chat.isPrivate && !chat.backendId.empty();
+  if (directPrivate && chat.models.empty()) {
+    widgets::toastError("Pick a model for this chat's backend first (the button in the header)");
+    return;
+  }
+  const std::vector<std::string> targets = directPrivate ? chat.models : selectedModels;
+
   Message user;
   user.id = core::uuid();
   user.parentId = chat.currentId;
@@ -1017,10 +1028,10 @@ void App::sendMessage(const std::string& textIn) {
   }
   chat.messages[user.id] = user;
   chat.currentId = user.id;
-  chat.models = selectedModels;
+  if (!directPrivate) chat.models = selectedModels;
 
   std::vector<std::pair<std::string, std::string>> pending;
-  for (const std::string& model : selectedModels) {
+  for (const std::string& model : targets) {
     Message assistant;
     assistant.id = core::uuid();
     assistant.parentId = user.id;

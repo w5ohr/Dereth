@@ -965,3 +965,34 @@ off-screen (use a timer); a JSON string literal cannot live in an `onload` attri
 very tall diagrams (image is capped to the column width only), offline fallback path
 beyond the earlier failing runs, and the artifact-view KaTeX half of the item (the
 inline image is what shipped).
+
+2026-10-25 III (74 direct backends), scoped to private chats: `src/core/backends.{h,cpp}`
+(app-free; Backend {id, name, kind ollama|openai|anthropic, url}; normalizeUrl adds /v1
+for OpenAI-compatible bases; listModels for /api/tags, /models and /v1/models; streamChat
+speaks the Ollama /api/chat NDJSON dialect outward whichever backend answers - OpenAI
+chat completions and Anthropic Messages requests are built from the Ollama-shaped payload
+(tool_calls get ids the following tool messages reuse, images become data URLs / base64
+blocks, options map to max_tokens / stop / temperature, format json|schema maps to
+response_format) and their SSE streams are decoded back into Ollama chunks, tool-call
+arguments reassembled, usage mapped to prompt_eval_count / eval_count, error bodies kept
+for the message; its own SSE splitter so a non-SSE error body is not lost).
+`agents::LoopConfig::transport` is the hook: when set the tool loop never touches the
+server passthrough or the Ollama URL. `src/backends_pane.cpp`: Settings > Direct backends
+(rows with kind, URL, key set / no key, Test, Remove, password field + Save key / Forget
+key; add form with kind combo; keys in the keychain under backend:<id>, or a 0600 file
+under OWUI_NO_KEYCHAIN), `backendList()` (the Ollama URL first as the implicit "ollama"
+backend, then extra["backends"]), per-backend model cache, and the header button of a
+private chat (backend list + filtered model list; `desktop_backend` on the chat; the send
+path uses the chat's own model for such chats, not the server selection). Private chats
+and their title call now always go through the transport - before this they preferred
+the server's /ollama/api/chat passthrough and only fell back to the Ollama URL, which
+contradicted "never on the server". Palette "Direct backends...". `--backendstest` runs 16
+offline checks. Verified on a scratch server: an OpenAI-compatible backend pointing at the
+local Ollama's /v1 lists 8 models (Test and the header popup), a private chat switched to
+it with qwen3:8b streamed a reply with reasoning and "434 in / 415 out", and the audit log
+shows only POST localhost:11434 /v1/chat/completions (reply + title) - nothing to the
+server's passthrough. Not covered: a real OpenAI / Anthropic key (the Anthropic dialect
+is self-test only), tool calls through the OpenAI dialect live (converted and unit-tested,
+not exercised against a model), server chats on a direct backend (out of scope: those are
+the server's), and the keychain path itself (the scratch run uses the file fallback).
+

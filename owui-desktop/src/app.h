@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "agents/tool_loop.h"
+#include "core/backends.h"
 #include "api/client.h"
 #include "core/pty.h"
 #include "core/promptvars.h"
@@ -177,6 +178,7 @@ struct ChatDoc {
   Json params = Json::object();
   Json raw = Json::object();    // server fields we round-trip untouched
   bool isPrivate = false;       // lives in an encrypted local file, talks to Ollama directly
+  std::string backendId;        // private chats: the direct backend that answers (empty = the Ollama URL)
 
   std::vector<std::string> branch() const;
   std::vector<std::string> siblings(const std::string& messageId) const;
@@ -557,6 +559,17 @@ class App {
   void refreshPrivateChats();
   void drawPrivateSection();
   std::vector<ChatSummary> privateChats;
+
+  // --- direct backends (backends_pane.cpp) ----------------------------------
+  // Ollama, OpenAI-compatible and Anthropic endpoints the app talks to with no
+  // server in between; keys in the keychain. Private chats pick one.
+  std::vector<backends::Backend> backendList();                 // the Ollama URL first, then the stored ones
+  bool findBackend(const std::string& id, backends::Backend* out);
+  std::string backendKey(const std::string& id);
+  agents::Transport backendTransport(const backends::Backend& backend);
+  void refreshBackendModels(const std::string& id, bool force);
+  void drawBackendsSection(float width);                        // Settings card
+  void drawPrivateBackendButton();                              // header button of a private chat
 
   // --- stream recovery (recovery.cpp) ---------------------------------------
   // Replies in flight are snapshotted to support/inflight.json; on launch a

@@ -70,11 +70,15 @@ void App::drawChatPane() {
     }
     if (label.empty()) label = modelsLoading ? "Loading models..." : "Select a model";
     ImGui::AlignTextToFramePadding();
-    if (ImGui::Button((label + "  v##modelbtn").c_str())) showModelPicker = true;
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && selectedModels.size() == 1) {
-      drawModelCardTooltip(selectedModels.front());
+    if (chat.isPrivate) {
+      drawPrivateBackendButton();   // backend + model of a direct-backend chat
+    } else {
+      if (ImGui::Button((label + "  v##modelbtn").c_str())) showModelPicker = true;
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && selectedModels.size() == 1) {
+        drawModelCardTooltip(selectedModels.front());
+      }
+      if (ImGui::IsItemHovered() && selectedModels.size() != 1) ImGui::SetTooltip("Choose one or more models");
     }
-    if (ImGui::IsItemHovered() && selectedModels.size() != 1) ImGui::SetTooltip("Choose one or more models");
 
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textDim));
@@ -98,7 +102,7 @@ void App::drawChatPane() {
       if (chat.isPrivate) {
         ImGui::SameLine();
         icons::inlineIcon(icons::Icon::Lock, palette.accent);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Private chat: encrypted on this Mac, replies straight from Ollama, never on the server");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Private chat: encrypted on this Mac, replies straight from the chosen backend, never on the server");
       }
     }
     ImGui::PopStyleColor();

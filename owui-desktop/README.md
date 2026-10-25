@@ -338,6 +338,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   own sidebar section with a lock; redaction, prompt variables, plugins and
   MCP tools work in them as anywhere. `Open WebUI --privatetest` checks the
   store offline.
+- **Direct backends:** Settings ▸ Direct backends registers model servers the
+  app talks to with no Open WebUI in between - Ollama, anything
+  OpenAI-compatible (OpenAI, LM Studio, llama.cpp server, vLLM, OpenRouter,
+  Groq...) or Anthropic - with API keys kept in the macOS keychain. The
+  Ollama URL is always the first backend. A private chat picks its backend
+  and model from the button in its header; the reply, its tool calls,
+  reasoning and token counts all come straight from that backend. "Test"
+  lists a backend's models. `Open WebUI --backendstest` checks the
+  OpenAI/Anthropic conversions offline.
 - **Stream recovery:** every reply in flight is snapshotted to a local file as
   it arrives. After a crash or a quit mid-reply, the next launch checks the
   server: a reply it finished meanwhile is reported, one its background task

@@ -9,7 +9,7 @@ namespace {
 // Streams one /api/chat call, preferring the Open WebUI passthrough (it carries
 // the user's auth and model access rules) and falling back to Ollama directly
 // when the passthrough yields nothing at all.
-api::Result streamChat(api::Client& api, const std::string& directUrl, const Json& payload,
+api::Result streamChat(api::Client& api, const std::string& directUrl, const Transport& transport, const Json& payload,
                        const std::function<bool(const Json&)>& onLine, const std::atomic<bool>* cancel,
                        bool* sawLine) {
   bool any = false;
@@ -17,6 +17,11 @@ api::Result streamChat(api::Client& api, const std::string& directUrl, const Jso
     any = true;
     return onLine(line);
   };
+  if (transport) {
+    api::Result res = transport(payload, counted, cancel);
+    *sawLine = any;
+    return res;
+  }
   api::Result res = api.ollamaChat(payload, counted, cancel);
   if (!res.ok && !any && !directUrl.empty() && !(cancel && cancel->load())) {
     core::debugLog("tool loop: passthrough failed (%s), trying %s directly", res.error.c_str(),
@@ -216,7 +221,7 @@ LoopResult runToolLoop(api::Client& api, const std::string& directOllamaUrl, con
 
     bool sawLine = false;
     api::Result res = streamChat(
-        api, directOllamaUrl, payload,
+        api, directOllamaUrl, config.transport, payload,
         [&](const Json& line) {
           if (line.contains("error")) {
             streamError = line["error"].is_string() ? line["error"].get<std::string>() : line["error"].dump();

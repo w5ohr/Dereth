@@ -422,6 +422,9 @@ void App::drawSettingsPane() {
     widgets::dimText("Each server keeps its own sign-in in the keychain.");
   }, width);
 
+  widgets::sectionHeader("DIRECT BACKENDS");
+  card("backends", [&] { drawBackendsSection(width); }, width);
+
   widgets::sectionHeader("CONNECTION");
   card("connection", [&] {
     field("Server", api_.server());
