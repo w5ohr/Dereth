@@ -1264,6 +1264,7 @@ void App::afterCompletion(const std::string& assistantId) {
     }
   }
   const Message& message = it->second;
+  if (message.error.empty()) recordUsage(message);
 
   if (!message.error.empty()) {
     widgets::toastError(message.error);

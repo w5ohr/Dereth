@@ -444,6 +444,10 @@ class App {
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
 
+  // --- usage dashboard (usage_pane.cpp) -------------------------------------
+  void recordUsage(const Message& message);   // one log line per finished reply
+  void drawUsageSection(float width);
+
   // --- git pane (git_pane.cpp) ----------------------------------------------
   // The project folder's repository: status, stage, diff, model-drafted
   // commit messages and PR descriptions, explain-a-diff, blame.

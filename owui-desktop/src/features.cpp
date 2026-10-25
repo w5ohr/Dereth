@@ -330,6 +330,7 @@ void App::drawPalette() {
   add("New private chat", "command", [this] { newPrivateChat(); });
   add("Undo the last apply to files", "command", [this] { undoLastApply(); });
   add("Compare models", "command", [this] { openModelCompare(); });
+  add("Usage dashboard (Tools > Usage)", "command", [this] { pane = Pane::Tools; });
   add("Toggle agent mode", "command", [this] {
     agentMode = !agentMode;
     settings().extra["agentMode"] = agentMode;

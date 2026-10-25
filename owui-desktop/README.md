@@ -248,6 +248,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Usage dashboard:** every finished reply is logged locally (model, tokens
+  in/out, time to first token, total time, tok/s). Tools ▸ Usage shows 7 /
+  30 / 90 days or all time: headline tiles, output tokens per day stacked by
+  model with a tok/s trend, a per-model table, cost for models you give a
+  per-million price, a rough energy figure for local models (joules per
+  token, adjustable), and CSV export. Private chats are logged without their
+  chat id. The log can be switched off.
 - **Git:** Tools ▸ Git shows the pinned project's repository - branch and
   upstream, the status list with stage/unstage ticks, the staged or
   per-file diff, a commit box whose message the model drafts from the staged

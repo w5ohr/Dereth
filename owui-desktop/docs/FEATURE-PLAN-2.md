@@ -783,3 +783,24 @@ Draft PR description produced a titled Markdown description with Summary / Chang
 Testing and a Copy button appeared. Not exercised: Unstage, per-file toggles (the same
 `gitStage` with the other flag) and a commit failure (hooks, empty identity). Not done
 from the item's wording: nothing beyond push/pull, which are left to the terminal.
+
+2026-10-24 IX (135 usage dashboard): `src/core/usagelog.{h,cpp}` (append / load of
+support/usage.jsonl, roll-ups by day, by model, day x model matrix, totals with cost from
+per-model $/1M prices and energy from a joules-per-token figure for local models,
+completion-token-weighted tok/s, CSV) and `src/usage_pane.cpp` (`recordUsage` from
+`afterCompletion` for every reply without an error - usage from the backend, tokens
+estimated from the text when none came, timings from the message's MessageTiming, tok/s
+derived when the backend gave none, local vs API from the model list; Tools > Usage with
+the on/off switch (extra["usageLog"]), a 7/30/90/all range, Export CSV (save panel),
+Reveal log, six headline tiles (+ cost when any model is priced), a stacked bar chart of
+output tokens per day by model with a tok/s line and per-day hover tooltips, a by-model
+table, a price editor (extra["usagePrices"]) and the joules slider
+(extra["usageJoulesPerToken"], default 0.5 J); palette "Usage dashboard"). `--usagetest`
+runs 11 offline checks. Verified against a scratch server: 37 seeded records over six
+days plus one live qwen3:8b reply (logged as 4305 in / 96 out, 53.1 tok/s, 7.9 s to
+first token) gave "38 replies - 130.5k in - 34.6k out - 32.6 min - 31.9 tok/s - 22.93
+Wh", seven bars stacked in three model colours with the tok/s line, and the by-model
+table (qwen3:8b 19 replies at 51.3 tok/s, llama3.3:70b 11 at 8.9, qwen3:32b 8 at 18.1).
+Not exercised in the GUI: Export CSV (a save panel) and the price editor (the cost column
+is covered by the offline test). Honest limits: energy is tokens x a constant, not a
+measurement; prompt tokens for server-task replies are what Open WebUI reports.
