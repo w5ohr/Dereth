@@ -111,6 +111,8 @@ struct ComposerCallbacks {
   std::function<void()> tab;               // Tab: slash-prompt completion
   std::function<bool(int direction)> navigate;   // Option+Up (-1) / Option+Down (+1); false = nothing to walk
   std::function<bool()> pasteImage;        // return true when the paste was an image
+  std::function<bool(int direction)> history;          // plain Up/Down: -1 older, +1 newer; false = move the caret
+  std::function<bool(const std::string&)> pasteText;   // return true when the text was taken elsewhere
 };
 void composerInstall(const ComposerCallbacks& callbacks);
 void composerSetFrame(float x, float y, float width, float height);

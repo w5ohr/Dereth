@@ -75,7 +75,11 @@ static std::string gIniPath;
   self.view.window.title = @"Open WebUI";
   self.view.window.titlebarAppearsTransparent = YES;
   self.view.window.minSize = NSMakeSize(900, 600);
-  [self.view.window setFrameAutosaveName:@"OpenWebUIMainWindow"];
+  // Secondary windows (a chat in its own window, the mini window) must not
+  // write the remembered frame, or the next launch opens at their size.
+  if (!app::App::instance().secondaryInstance) {
+    [self.view.window setFrameAutosaveName:@"OpenWebUIMainWindow"];
+  }
   // ImGui re-enables mouse hover only when it sees the mouse move; keep
   // mouse-moved events flowing even while a native subview is first responder.
   self.view.window.acceptsMouseMovedEvents = YES;

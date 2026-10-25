@@ -160,7 +160,13 @@ Things a browser tab can't do, plus the workflow features built on top:
   the text; Enter sends, Shift+Enter breaks a line (Cmd+Enter sends when
   "Enter sends" is off), Esc hands the keyboard to the transcript, ⌥↑/⌥↓ walk
   it, pasting an image attaches it. Settings ▸ "Native text field" switches
-  back to the built-in field.
+  back to the built-in field. Drafts autosave per chat and come back after a
+  relaunch; ↑ in an empty composer walks earlier prompts shell-style (across
+  chats, ↓ returns); a paste of 40+ lines becomes an attachment chip instead
+  of flooding the box; "Quote in a reply" under any message drops it into the
+  composer as a `>` block; and steering chips under the latest answer
+  (Shorter, More detail, As a table, As code, Simpler, Check it) send the
+  follow-up with one click.
 - **Windows:** any chat can open in its own window - from the sidebar row's
   menu, the chat's "More" menu, File ▸ Open Chat in New Window (⇧⌘N) or the
   palette - and as a floating mini window (compact, no sidebar, above other

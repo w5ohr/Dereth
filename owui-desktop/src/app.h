@@ -358,6 +358,24 @@ class App {
   // Fills `chats` from the mirror when the server can't be reached.
   void loadChatsFromMirror(bool archived);
 
+  // --- composer conveniences (compose_tools.cpp) -----------------------------
+  std::string draftKey() const;
+  bool hasDraft(const std::string& chatId) const;
+  void saveDraft();
+  void restoreDraft();
+  void clearDraft(const std::string& key);
+  void trackDraft();                      // per frame; saves once typing pauses
+  void pushHistory(const std::string& text);
+  bool recallHistory(int direction);      // -1 older, +1 newer; false = not handled
+  bool smartPaste(const std::string& text);   // true when attached as a file instead
+  void quoteReply(const Message& message);
+  void steer(const std::string& instruction);
+  std::vector<std::string> promptHistory;
+  int historyIndex = -1;
+  std::string historyStash;
+  std::string lastSavedDraft;
+  double draftChangedAt = 0.0;
+
   // --- windows (windows.cpp) -------------------------------------------------
   // A second window is a second instance started with --chat (and --mini for
   // a compact window that floats above other apps).

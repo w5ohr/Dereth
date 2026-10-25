@@ -582,6 +582,28 @@ void App::drawChatPane() {
         }
       }
 
+      // --- steering chips under the latest answer: one click, no typing
+      if (!isUser && !message.streaming && messageId == lastAssistantId && streams_.empty() &&
+          message.error.empty()) {
+        ImGui::Dummy(ImVec2(0, 4));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 3));
+        struct Chip { const char* label; const char* prompt; };
+        static const Chip kChips[] = {
+            {"Shorter", "Rewrite your last answer much more briefly, keeping only what matters."},
+            {"More detail", "Expand your last answer with more detail and concrete examples."},
+            {"As a table", "Present your last answer as a markdown table."},
+            {"As code", "Give your last answer as code only, in a single fenced block, with no prose."},
+            {"Simpler", "Explain your last answer again in plain language, as if to a beginner."},
+            {"Check it", "Review your last answer for mistakes or missing cases and correct it."},
+        };
+        for (const Chip& chip : kChips) {
+          if (widgets::ghostButton(chip.label)) steer(chip.prompt);
+          ImGui::SameLine();
+        }
+        ImGui::NewLine();
+        ImGui::PopStyleVar();
+      }
+
       // --- action row
       if (!message.streaming) {
         ImGui::Dummy(ImVec2(0, 2));
@@ -589,6 +611,8 @@ void App::drawChatPane() {
           platform::setClipboardText(message.content);
           widgets::toast(widgets::ToastLevel::Success, "Copied");
         }
+        ImGui::SameLine();
+        if (icons::button("quote", icons::Icon::Chat, "Quote in a reply")) quoteReply(message);
         ImGui::SameLine();
         if (icons::button("pin", icons::Icon::Star, isPinned(messageId) ? "Unpin" : "Pin", 0.0f,
                           isPinned(messageId) ? palette.warning : 0)) {
@@ -760,6 +784,11 @@ void App::drawChatPane() {
         };
         callbacks.navigate = [this](int direction) { return navigateFromComposer(direction); };
         callbacks.pasteImage = [this] { return pasteImageFromClipboard(); };
+        callbacks.history = [this](int direction) {
+          composer = native::composerText();
+          return recallHistory(direction);
+        };
+        callbacks.pasteText = [this](const std::string& text) { return smartPaste(text); };
         native::composerInstall(callbacks);
       }
       textHeight = std::clamp(native::composerContentHeight(), 46.0f, 240.0f);
@@ -789,6 +818,7 @@ void App::drawChatPane() {
         composer = viewText;
       }
       syncedComposer = composer;
+      trackDraft();
       native::composerSetStyle(palette.text, palette.textFaint, palette.accent,
                                settings().fontSize * settings().uiScale, settings().sendOnEnter);
       native::composerSetFrame(boxStart.x + 12, boxStart.y + 8, contentWidth - 24, textHeight);

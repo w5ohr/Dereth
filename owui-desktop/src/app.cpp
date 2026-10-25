@@ -320,6 +320,7 @@ void App::shutdown() {
   socket_.stop();
   if (!secondaryInstance) {
     // Only the first window owns the settings file.
+    saveDraft();
     settings().selectedModels = selectedModels;
     settings().save();
   }
@@ -428,10 +429,13 @@ std::string App::fetchImageBytes(const std::string& url) {
 
 void App::newChat() {
   stopAllStreams();
+  saveDraft();
   chat = ChatDoc();
   chat.models = selectedModels;
   attachments.clear();
   composer.clear();
+  ++composerGeneration;
+  restoreDraft();
   scrollToBottom = true;
   focusComposer = true;
   pane = Pane::Chat;
@@ -440,6 +444,7 @@ void App::newChat() {
 void App::openChat(const std::string& id) {
   if (id == chat.id) return;
   stopAllStreams();
+  saveDraft();
   pane = Pane::Chat;
   async::run([this, id] {
     api::Result res = api_.chat(id);
@@ -467,6 +472,9 @@ void App::openChat(const std::string& id) {
       }
       chat = doc;
       if (!chat.models.empty()) selectedModels = chat.models;
+      composer.clear();
+      ++composerGeneration;
+      restoreDraft();
       scrollToBottom = true;
       focusComposer = true;
       focusedMessageId.clear();
@@ -917,6 +925,8 @@ void App::sendMessage(const std::string& text) {
 
   attachments.clear();
   composer.clear();
+  pushHistory(text);
+  clearDraft(draftKey());
   scrollToBottom = true;
 
   if (chat.id.empty()) {
@@ -1323,6 +1333,11 @@ void App::frame() {
     }
     if (settings().theme == "system") applyTheme();
     localIndexEnabled = settings().extra.value("localIndexEnabled", false);
+    if (settings().extra.contains("promptHistory") && settings().extra["promptHistory"].is_array()) {
+      for (const auto& entry : settings().extra["promptHistory"]) {
+        if (entry.is_string()) promptHistory.push_back(entry);
+      }
+    }
     if (settings().extra.contains("fanoutModels") && settings().extra["fanoutModels"].is_array()) {
       for (const auto& id : settings().extra["fanoutModels"]) {
         if (id.is_string()) fanoutModels.push_back(id);

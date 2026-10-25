@@ -643,6 +643,16 @@ NSColor* colorFromImU32(unsigned c) {
     if (gComposer.tab) gComposer.tab();
     return;
   }
+  // Plain Up/Down on the first/last line recall earlier prompts (shell-style);
+  // in the middle of a text they move the caret as usual.
+  if (selector == @selector(moveUp:) || selector == @selector(moveDown:)) {
+    const BOOL up = selector == @selector(moveUp:);
+    const NSRange sel = self.selectedRange;
+    const NSString* text = self.string;
+    const BOOL firstLine = [text rangeOfString:@"\n" options:0 range:NSMakeRange(0, sel.location)].location == NSNotFound;
+    const BOOL lastLine = [text rangeOfString:@"\n" options:0 range:NSMakeRange(NSMaxRange(sel), text.length - NSMaxRange(sel))].location == NSNotFound;
+    if (((up && firstLine) || (!up && lastLine)) && gComposer.history && gComposer.history(up ? -1 : 1)) return;
+  }
   // Option+Up / Option+Down walk the transcript, as they do from the ImGui field.
   if (selector == @selector(moveToBeginningOfParagraph:) || selector == @selector(moveToEndOfParagraph:)) {
     const bool walked =
@@ -663,8 +673,11 @@ NSColor* colorFromImU32(unsigned c) {
 }
 
 - (void)paste:(id)sender {
-  core::debugLog("composer paste: image hook %s", gComposer.pasteImage ? "set" : "unset");
   if (gComposer.pasteImage && gComposer.pasteImage()) return;
+  if (gComposer.pasteText) {
+    NSString* text = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
+    if (text && gComposer.pasteText(native::toStd(text))) return;
+  }
   [super paste:sender];
 }
 

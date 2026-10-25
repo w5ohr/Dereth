@@ -399,3 +399,27 @@ the same chat in a cascaded full window; "floating mini window" started a third 
 560x760 without the sidebar. Known cosmetic: at 560 pt the chat header's title and
 action icons overlap. A launch from a bundle under ~/Documents makes macOS ask for
 Documents access (LaunchServices-launched process); the /Applications copy does not.
+
+2026-10-24 composer conveniences (54 drafts, 56 history ring, 57 smart paste, 52
+quote-reply, 60 steering chips): `src/compose_tools.cpp`. Drafts live in
+extra["drafts"] keyed by chat id ("new" for a fresh chat), written 1.2 s after typing
+pauses (`trackDraft` from the composer every frame) and on switch/quit, restored in
+`newChat`/`openChat`, cleared on send. History is extra["promptHistory"] (50 entries,
+deduplicated, newest last); the native composer hands plain Up/Down at the first/last
+line to `recallHistory`, which only starts from an empty composer and stashes it for
+Down past the newest. Smart paste: the composer's paste hook offers the text to
+`smartPaste` first - 40+ lines or 4000+ chars become `attachBytes("pasted.txt|json|
+html|cpp|py")` with a toast, shorter pastes go into the text view as before.
+Quote-reply is a button on every message (`quoteReply`: up to 600 chars as `> `
+lines appended to the composer). Steering chips draw under the latest answer while
+nothing streams (`steer` = `sendMessage(instruction)`). Verified in the GUI against a
+scratch server: a draft typed in a new chat survived opening "Greetings" and coming
+back; two ↑ presses recalled the seeded history newest-first; the chips row drew under
+the answer; "Quote in a reply" put `> Hello, Bonjour, Hola.` in the composer; a
+60-line ⌘V produced a `pasted.txt` chip and the "61 lines" toast with the composer
+untouched. Also in this change: secondary instances no longer set the window frame
+autosave name - the mini window had been writing the shared frame, so every launch
+opened at 560x760. Not delivered from the items' wording: a sidebar pencil on chats
+with a draft, ⌃R fuzzy history search, a rendered callout for the quote (it is a
+plain `>` block), URL paste offers (fetch/summarise), the Translate/ELI5 chips
+(Simpler covers ELI5).
