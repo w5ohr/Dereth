@@ -873,3 +873,25 @@ started "Recipe: Explain copied text" whose step carried the copied text through
 fire; a copied reply would not either). Not done from the items' wording: a mode from
 the menu bar extra (the switch lives in the pane; the extra's menu is unchanged), and
 rename / tag / file actions beyond what a recipe's steps do in the chat.
+
+2026-10-24 V (95 test loop): `src/core/testloop.{h,cpp}` (runner detection from the
+project's files - pytest when `python3 -m pytest --version` works, else unittest
+discovery, plus npm test, cargo, go, swift, ctest with a build dir, make test; the
+files a failure output names that exist under the project; a head+tail digest; a green
+test per runner) and `src/test_loop.cpp` (Tools > Test loop: runner combo, round budget
+1-8, Auto-apply switch, an extra instruction; "Run tests" once or "Run until green";
+each round runs the tests on a worker with a 5-minute cap, on failure asks the model
+through `gitAsk` - fences kept - for the COMPLETE contents of every changed file as
+`path=` blocks, writes the named blocks directly with .bak backups and records them as
+the last apply (journal + Undo), then runs again; stops at green, at the budget, when
+the reply names no file or changes nothing, or on Stop; with auto-apply off a round
+ends in the apply dialog). Rounds show the output digest, the files changed and the
+model's reply. `--testlooptest` runs 11 offline checks. Verified against a scratch
+server with qwen3:8b on the scratch repo (unittest, `shout()` missing `.upper()`): round
+1 failed on test_shout, the model returned src/app.py whole, the loop wrote it (backup
+beside it), round 2 ran green and the status read "Green after 2 rounds"; the tests pass
+from the shell too. Found on the way: `gitAsk` strips an outer code fence from replies
+(right for commit messages), which turned the fixer's single `path=` block into a bare
+snippet with no file - a `keepFences` flag now leaves the loop's replies alone. Not
+exercised: the review (auto-apply off) path, multi-round repairs, and runners other
+than unittest (pytest is not installed on this machine).

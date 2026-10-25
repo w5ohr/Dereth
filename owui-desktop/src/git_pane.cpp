@@ -198,7 +198,8 @@ void App::gitStageAll(bool stage) {
 }
 
 // One non-streaming model call with the chat's model (or the first selected).
-void App::gitAsk(const std::string& system, const std::string& user, std::function<void(std::string)> done) {
+void App::gitAsk(const std::string& system, const std::string& user, std::function<void(std::string)> done,
+                 bool keepFences) {
   const std::string model = selectedModels.empty() ? (chat.models.empty() ? "" : chat.models.front())
                                                    : selectedModels.front();
   if (model.empty()) {
@@ -210,9 +211,9 @@ void App::gitAsk(const std::string& system, const std::string& user, std::functi
                      {"stream", false},
                      {"messages", Json::array({Json{{"role", "system"}, {"content", system}},
                                                Json{{"role", "user"}, {"content", user}}})}};
-  async::run([this, payload, done] {
+  async::run([this, payload, done, keepFences] {
     api::Result res = api_.completion(payload);
-    async::post([res, done] {
+    async::post([res, done, keepFences] {
       if (!res.ok) {
         widgets::toastError("Model call failed: " + api::errorMessage(res));
         done("");
@@ -225,7 +226,7 @@ void App::gitAsk(const std::string& system, const std::string& user, std::functi
       if (think != std::string::npos) text = text.substr(think + 8);
       text = core::trim(text);
       // Strip a fence the model may have wrapped the answer in.
-      if (core::startsWith(text, "```")) {
+      if (!keepFences && core::startsWith(text, "```")) {
         const size_t nl = text.find('\n');
         const size_t end = text.rfind("```");
         if (nl != std::string::npos && end != std::string::npos && end > nl) text = core::trim(text.substr(nl + 1, end - nl - 1));

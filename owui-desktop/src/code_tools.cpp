@@ -829,6 +829,21 @@ void App::applyFileBlocks(const std::string& content) {
   });
 }
 
+// The test loop writes files itself (backups beside them); this makes that
+// write the "last apply" so Undo and the journal cover it.
+void App::recordTestLoopApply(const std::vector<std::string>& relPaths) {
+  const std::string folder = currentProjectFolder(*this);
+  std::vector<AppliedFile> files;
+  for (const std::string& rel : relPaths) {
+    const std::string full = folder + "/" + rel;
+    std::error_code ec;
+    files.push_back({full, !fs::exists(full + ".bak", ec)});
+  }
+  if (files.empty()) return;
+  journalApply(files);
+  gLastApply = files;
+}
+
 void App::undoLastApply() {
   if (gLastApply.empty()) {
     widgets::toastInfo("Nothing to undo - no apply in this session");

@@ -254,6 +254,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   chat and sends the steps one after another as each reply finishes, so the
   whole chain is kept. Run from the tab, the palette ("Run recipe: ...") or
   a daily schedule; three example recipes are one click away.
+- **Test loop:** Tools ▸ Test loop detects the project's runner (pytest or
+  unittest, npm test, ctest, swift test, go test, cargo test, make test),
+  runs it, and on failure asks the model for fixes with the failure digest
+  and the files it names, applies the returned files (backups kept, one Undo
+  reverts the round) and runs again - until green or the round budget is
+  spent. Turn off auto-apply to review each fix in the apply dialog first.
 - **Triggers:** under Tools ▸ Recipes, a watched folder runs a recipe for
   every file that lands in it (the file is attached and its path is the
   recipe's `{{input:File}}`; filter by extension), and the clipboard watcher

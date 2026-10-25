@@ -468,6 +468,16 @@ class App {
   void tickTriggers();
   void drawTriggersSection(float width);
 
+  // --- test loop (test_loop.cpp) --------------------------------------------
+  // Run the project's tests, have the model fix failures, apply, repeat.
+  void testLoopDetect();
+  void testLoopRun(bool startLoop);
+  void testLoopAskForFix();
+  void testLoopApply(const std::string& reply);
+  void testLoopStop();
+  void drawTestLoopSection(float width);
+  void recordTestLoopApply(const std::vector<std::string>& relPaths);   // journal + undo, from code_tools
+
   // --- backup and import (backup.cpp) ---------------------------------------
   void exportEverything();
   void importChats();
@@ -486,7 +496,8 @@ class App {
   void gitLoadDiff();
   void gitStage(const std::string& path, bool stage);
   void gitStageAll(bool stage);
-  void gitAsk(const std::string& system, const std::string& user, std::function<void(std::string)> done);
+  void gitAsk(const std::string& system, const std::string& user, std::function<void(std::string)> done,
+              bool keepFences = false);   // keepFences: the reply's code fences carry meaning (file blocks)
   void gitDraftCommitMessage();
   void gitCommit();
   void gitExplainDiff();

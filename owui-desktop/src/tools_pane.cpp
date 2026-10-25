@@ -20,7 +20,7 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop };
 
 Tab gTab = Tab::Command;
 
@@ -58,6 +58,7 @@ const char* tabName(Tab tab) {
     case Tab::Usage: return "Usage";
     case Tab::Backup: return "Backup";
     case Tab::Recipes: return "Recipes";
+    case Tab::TestLoop: return "Test loop";
   }
   return "";
 }
@@ -201,14 +202,14 @@ void knowledgeCombo(const char* id, const Json& list, std::string* selected, flo
 }  // namespace
 
 void App::drawToolsPane() {
-  paneHeader("Tools", "Command runner, build errors, benchmark, local index, MCP servers, terminal, plugins, git, usage, backup, recipes", nullptr);
+  paneHeader("Tools", "Command runner, build errors, benchmark, local index, MCP servers, terminal, plugins, git, usage, backup, recipes, test loop", nullptr);
   paneBody("##tools");
   const float width = ImGui::GetContentRegionAvail().x - 18.0f;
   const auto& palette = theme::palette();
 
   if (ImGui::BeginTabBar("##toolstabs")) {
     for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex,
-                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes}) {
+                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop}) {
       if (ImGui::BeginTabItem(tabName(tab))) {
         gTab = tab;
         ImGui::EndTabItem();
@@ -575,6 +576,9 @@ void App::drawToolsPane() {
       break;
     case Tab::Recipes:
       drawRecipesSection(width);
+      break;
+    case Tab::TestLoop:
+      drawTestLoopSection(width);
       break;
   }
 
