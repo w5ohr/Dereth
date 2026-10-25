@@ -66,6 +66,10 @@ void App::drawSettingsPane() {
     ImGui::Checkbox("Render markdown", &cfg.renderMarkdown);
   }, width);
 
+  widgets::sectionHeader("ACCESSIBILITY");
+  drawAccessibilitySection(width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("THEME EDITOR");
   drawThemeEditorSection(width);
   ImGui::Dummy(ImVec2(0, 8));

@@ -53,16 +53,23 @@ ImFont* loadFirst(const std::vector<FontCandidate>& candidates, float size) {
 
 }  // namespace
 
+std::string gFontOverride, gFontOverrideBold;
+
+void setFontOverride(const std::string& regularPath, const std::string& boldPath) {
+  gFontOverride = regularPath;
+  gFontOverrideBold = boldPath;
+}
+
 void loadFonts(float baseSize) {
   ImGuiIO& io = ImGui::GetIO();
   io.Fonts->Clear();
 
-  const std::vector<FontCandidate> uiRegular = {
+  std::vector<FontCandidate> uiRegular = {
       {"/System/Library/Fonts/SFNS.ttf", 0},
       {"/System/Library/Fonts/HelveticaNeue.ttc", 0},
       {"/System/Library/Fonts/Supplemental/Arial.ttf", 0},
   };
-  const std::vector<FontCandidate> uiBold = {
+  std::vector<FontCandidate> uiBold = {
       {"/System/Library/Fonts/HelveticaNeue.ttc", 1},
       {"/System/Library/Fonts/Supplemental/Arial Bold.ttf", 0},
       {"/System/Library/Fonts/SFNS.ttf", 0},
@@ -72,6 +79,11 @@ void loadFonts(float baseSize) {
       {"/System/Library/Fonts/Menlo.ttc", 0},
       {"/System/Library/Fonts/Supplemental/Courier New.ttf", 0},
   };
+
+  if (!gFontOverride.empty()) {
+    uiRegular.insert(uiRegular.begin(), {gFontOverride.c_str(), 0});
+    uiBold.insert(uiBold.begin(), {gFontOverrideBold.empty() ? gFontOverride.c_str() : gFontOverrideBold.c_str(), 0});
+  }
 
   // A wide-coverage fallback is merged into each face so arrows, maths and box
   // characters in model output render instead of showing a missing-glyph box.

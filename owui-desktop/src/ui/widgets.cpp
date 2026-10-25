@@ -14,6 +14,10 @@
 #include <nlohmann/json.hpp>
 
 namespace widgets {
+
+static bool gReducedMotion = false;
+void setReducedMotion(bool on) { gReducedMotion = on; }
+bool reducedMotion() { return gReducedMotion; }
 namespace {
 
 struct ToastItem {
@@ -77,7 +81,7 @@ void renderToasts() {
   for (auto it = items.rbegin(); it != items.rend(); ++it, ++index) {
     const double age = core::nowMillis() - it->born;
     float alpha = 1.0f;
-    if (age > 5000.0) alpha = static_cast<float>(1.0 - (age - 5000.0) / 1000.0);
+    if (age > 5000.0 && !gReducedMotion) alpha = static_cast<float>(1.0 - (age - 5000.0) / 1000.0);
     alpha = ImClamp(alpha, 0.0f, 1.0f);
 
     ImGui::SetNextWindowBgAlpha(0.96f * alpha);
@@ -113,7 +117,7 @@ void spinner(const char* id, float radius, float thickness, ImU32 color) {
   ImVec2 size(radius * 2.0f, radius * 2.0f);
   ImGui::Dummy(size);
   ImDrawList* dl = ImGui::GetWindowDrawList();
-  const float t = static_cast<float>(ImGui::GetTime());
+  const float t = gReducedMotion ? 0.0f : static_cast<float>(ImGui::GetTime());
   const ImVec2 center(pos.x + radius, pos.y + radius);
   const int segments = 32;
   const float start = fmodf(t * 3.4f, 6.2831f);

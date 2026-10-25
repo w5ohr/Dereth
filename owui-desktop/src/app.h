@@ -11,6 +11,7 @@
 #include <map>
 #include <set>
 
+#include "core/accessibility.h"
 #include "core/readingmode.h"
 #include "core/rerank.h"
 #include "core/retrieval.h"
@@ -833,6 +834,12 @@ class App {
   int rerankScoreFor(const std::string& path, const std::string& text) const;   // -1 when not scored
   std::string rerankSummary() const;
   void drawRerankControls();
+
+  // --- accessibility (accessibility_pane.cpp) -------------------------------
+  bool fontsReloadRequested = false;   // main.mm rebuilds the atlas before the next frame
+  accessibility::Prefs accessibilityPrefs() const;
+  void applyAccessibility();           // reduced motion, font override, scale, then the theme
+  void drawAccessibilitySection(float width);
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

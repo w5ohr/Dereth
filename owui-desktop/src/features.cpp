@@ -392,6 +392,7 @@ void App::drawPalette() {
   add("Shortcut editor (rebind keys, Vim mode)", "settings", [this] { pane = Pane::Settings; });
   add("Theme editor (colours, VS Code / Base16 import, server accent)", "settings", [this] { pane = Pane::Settings; });
   add("Take the tour", "command", [this] { startTour(); });
+  add("Accessibility (reduced motion, high contrast, UI font, scale)", "settings", [this] { pane = Pane::Settings; });
   add("Reading mode (toggle: measure, text size, controls on hover)", "command", [this] { toggleReadingMode(); });
   add("Menu-bar-only mode (toggle: no Dock icon, live from the extra)", "command", [this] { setMenuBarOnly(!settings().extra.value("menuBarOnly", false)); });
   add("What's new in this version", "command", [this] { showWhatsNewSheet(true); });

@@ -35,6 +35,9 @@ struct Palette {
 extern Fonts fonts;
 
 void loadFonts(float baseSize);
+// A .ttf/.otf to use as the UI face (and its bold partner) instead of the
+// system font; "" clears. Takes effect on the next loadFonts().
+void setFontOverride(const std::string& regularPath, const std::string& boldPath);
 
 // Font/size helpers for the 1.92+ dynamic font API.
 void pushBold();

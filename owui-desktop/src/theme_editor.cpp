@@ -6,6 +6,7 @@
 #include "app.h"
 #include "core/common.h"
 #include "core/settings.h"
+#include "core/accessibility.h"
 #include "core/themeedit.h"
 #include "native.h"
 #include "pane_common.h"
@@ -36,6 +37,12 @@ std::map<std::string, ImU32> App::themeOverridesForCurrent() const {
   for (const auto& [slot, hex] : themeedit::overridesFromJson(extra, name)) {
     themeedit::Colour c;
     if (themeedit::parseHex(hex, &c)) out[slot] = toU32(c);
+  }
+  if (accessibility::fromJson(extra).highContrast) {
+    for (const auto& [slot, hex] : accessibility::highContrastOverrides(name != "light")) {
+      themeedit::Colour c;
+      if (themeedit::parseHex(hex, &c)) out[slot] = toU32(c);
+    }
   }
   const std::string accent = themeedit::serverAccent(extra, api_.server());
   themeedit::Colour a;

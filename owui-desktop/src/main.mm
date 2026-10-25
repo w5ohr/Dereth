@@ -136,6 +136,10 @@ void setPreferredFrameRate(int fps) {
     }
   }
 
+  if (app::App::instance().fontsReloadRequested) {
+    app::App::instance().fontsReloadRequested = false;
+    theme::loadFonts(core::Settings::instance().fontSize);   // safe here: no frame is open
+  }
   ImGui_ImplMetal_NewFrame(descriptor);
   ImGui_ImplOSX_NewFrame(view);
   ImGui::NewFrame();
@@ -512,6 +516,7 @@ int runReadingModeSelfTest();
 int runVirtualizeSelfTest();
 int runMenuBarSelfTest();
 int runRerankSelfTest();
+int runAccessibilitySelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -561,6 +566,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--virtualtest") return runVirtualizeSelfTest();
     if (std::string(argv[i]) == "--menubartest") return runMenuBarSelfTest();
     if (std::string(argv[i]) == "--reranktest") return runRerankSelfTest();
+    if (std::string(argv[i]) == "--a11ytest") return runAccessibilitySelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

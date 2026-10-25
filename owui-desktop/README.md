@@ -671,6 +671,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   scores, model and time of the last pass; on any failure the search order
   is kept. `Open WebUI --reranktest` covers the prompt, the parser and the
   ordering.
+- **Accessibility options:** Settings ▸ Accessibility has reduced motion
+  (toasts stop fading, spinners stop spinning), high contrast
+  (black-and-white surfaces with strong borders, text and accent laid over
+  whichever theme is on), a UI font picker over the fonts on this Mac -
+  ~/Library/Fonts, /Library/Fonts and the system extras, with dyslexia- and
+  low-vision-friendly faces such as OpenDyslexic, Atkinson Hyperlegible,
+  Lexend, Verdana, Tahoma or Comic Sans listed first when installed, bold
+  partners paired - and a UI scale slider (0.8x to 1.6x) that scales the
+  whole interface, applied live. `Open WebUI --a11ytest` covers the
+  preferences, the font list and the contrast sets.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

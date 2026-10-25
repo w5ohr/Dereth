@@ -21,6 +21,8 @@ void spinner(const char* id, float radius, float thickness, ImU32 color = 0);
 void loadingRow(const char* text);
 
 void pill(const std::string& text, ImU32 bg, ImU32 fg = 0);
+void setReducedMotion(bool on);   // accessibility: toasts don't fade, spinners don't spin
+bool reducedMotion();
 void sectionHeader(const char* text);
 void dimText(const char* fmt, ...);
 void centeredText(const char* text);

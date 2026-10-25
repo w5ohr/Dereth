@@ -1706,3 +1706,25 @@ searching "when may visitors climb the tower" logged "3 scored: 10, 7, 0 by qwen
 swallowed newlines, and "[2]" in prose was read as a positional list. Not covered: the
 per-message prompt path beyond the shared function (the tab exercised the same call),
 Keep / Drop below sliders beyond rendering, and behaviour with no small model set.
+
+2026-10-25 143 (accessibility options): `src/core/accessibility.*` (Prefs <->
+extra["accessibility"]: reducedMotion, highContrast, uiFont + uiFontBold paths;
+`fontChoices` from folder listings - .ttf/.otf only, bold/italic variants dropped, bold
+partners paired, dyslexia- and low-vision-friendly faces (OpenDyslexic, Atkinson
+Hyperlegible, Lexend, Verdana, Tahoma, Trebuchet MS, Comic Sans, Arial Rounded) marked
+recommended and listed first; `displayName`; `highContrastOverrides(dark)` full slot
+sets). `theme::setFontOverride` puts the chosen face (and bold partner) in front of the
+system candidates on the next loadFonts; `widgets::setReducedMotion` stops the toast fade
+and the spinner rotation; the theme editor's `themeOverridesForCurrent` lays the
+high-contrast set over the theme overrides (server accent still last); main.mm rebuilds
+the font atlas between frames when `fontsReloadRequested` is set; `applyAccessibility`
+runs at init. Settings "ACCESSIBILITY" card after Appearance: the two switches, the UI
+font combo (System font + choices, Rescan), and a UI scale slider (0.8-1.6x) applied
+live through FontScaleMain and saved as uiScale; palette entry. `--a11ytest` runs 5
+offline checks. Verified on a scratch home: the card listed 181 fonts; High contrast on
+turned the window black with white text, grey-white borders and a lighter accent (the
+theme editor read #000000 / #7fb0ff) and off restored the theme; the font combo listed
+Comic Sans MS, Tahoma, Trebuchet MS and Verdana first as recommended, choosing Tahoma
+saved the regular and bold paths and the interface re-rendered in Tahoma after the
+between-frames reload. Not covered: reduced motion visually (self-test and code review
+only), the UI scale slider beyond rendering, and a user-installed OpenDyslexic.
