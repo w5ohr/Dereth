@@ -524,6 +524,10 @@ void App::openChat(const std::string& id) {
       restoreScrollFor(id);
       focusComposer = true;
       focusedMessageId.clear();
+      if (!pendingFocusMessage.empty()) {   // opened from a search hit
+        focusMessageInChat(pendingFocusMessage);
+        pendingFocusMessage.clear();
+      }
       updateHandoffAndSpotlight();
     });
   });
@@ -1566,6 +1570,7 @@ void App::frame() {
     tickScheduler();
     tickVoiceMode();
     tickOfflineQueue();
+    tickChatIndex();
     if (serverReachable) syncMirror(false);
 
     // The socket drops when the server restarts or the network blips; bring

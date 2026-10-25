@@ -423,6 +423,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   folder (the pinned project, else a scratch folder). The card under Tools ▸
   MCP lists what was found, flags broken headers, writes three examples and
   tries any tool with arguments. `Open WebUI --scripttest` covers it.
+- **Search chats by meaning:** every chat in the local mirror is chunked and
+  embedded on this Mac (nomic-embed-text through the Ollama URL) into a small
+  SQLite index that fills a few seconds after launch and keeps up with
+  changes once a minute, re-embedding only passages whose text changed. Tick
+  "By meaning" under the sidebar search and type what a conversation was
+  about; hits show the chat, who said it and the passage, and a click opens
+  the chat on that message (switching branch if needed). Tools ▸ Local index
+  shows the index, with Index now / Rebuild / Clear. Private chats stay out.
+  `Open WebUI --chatindextest` covers the index with a fake embedder.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

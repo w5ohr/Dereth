@@ -333,6 +333,12 @@ void App::drawPalette() {
   add("Float this window on top", "command", [this] { toggleFloating(); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
+  add("Search chats by meaning", "command", [this] {
+    chatSearchSemantic = true;
+    sidebarVisible = true;
+    pane = Pane::Chat;
+    semanticSearchDirty = true;
+  });
   add("Direct backends (Ollama, OpenAI-compatible, Anthropic)", "settings", [this] { pane = Pane::Settings; });
   add("Undo the last apply to files", "command", [this] { undoLastApply(); });
   add("Compare models", "command", [this] { openModelCompare(); });

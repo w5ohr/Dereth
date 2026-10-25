@@ -1091,3 +1091,36 @@ and the JXA example (frontmost_app is marked sandbox: off because System Events 
 it, and the first run may raise macOS's automation prompt), the Try box in the card, and
 scripts on a pinned project folder.
 
+2026-10-25 VI (109 semantic chat search): `src/core/chatindex.{h,cpp}` (app-free SQLite index
+chat-index.db: chats(id, title, updated_at) + chunks(chat_id, message_id, n, role, text,
+hash, vector); indexChat chunks every user/assistant message of a chat at ~900 chars,
+embeds only chunks whose hash changed - "search_document: <title>\n<text>" in batches of
+16 through a caller-supplied Embed - drops chunks of removed messages, returns -1 and
+keeps rows on an embedding failure; needsIndex compares updated_at; search embeds
+"search_query: ..." and dot-products every stored unit vector, one hit per message, best
+first; stats / clear / removeChat / chatIds). `src/local_embed.h` exports the local
+index's embed() as app::embedTexts (nomic-embed-text at the Ollama URL). `src/chat_index.cpp`:
+tickChatIndex runs a pass ~8 s after launch and then once a minute (40 changed chats per
+pass, "more to do" reschedules in 10 s; an embedding failure pauses for 5 minutes with the
+reason in the status), reading chats from the local mirror (store::listChats + getChat,
+every branch; private chats are not in the mirror so never indexed) and dropping index
+rows for chats the mirror no longer has; the sidebar search gained a "By meaning"
+checkbox (extra-free, per session) - with it on the field searches the index (350 ms
+debounce, 25 hits) and the list shows title, You:/AI: snippet and a similarity percent,
+tooltip with the passage; a click opens the chat and focusMessageInChat puts the accent
+bar and scroll on that message, switching to its branch when it is not the current one
+(pendingFocusMessage is consumed in openChat's post handler); card "CHAT INDEX" under
+Tools > Local index (on/off extra["chatIndex"], counts and size, Index now / Rebuild /
+Clear, status line); palette "Search chats by meaning". `--chatindextest` runs 14 checks
+with a fake bag-of-words embedder (incremental re-embedding counts, removal, ranking, k,
+failure paths). Verified on a scratch server with three API-seeded chats (sourdough,
+sailing, Rust): 28 s after launch the card read "3 chats, 6 passages indexed - 3 chats
+updated (6 passages embedded)" with no click; the query "bread that came out heavy and
+wet inside" (none of the chat's words) ranked both sourdough passages first (67% / 61%)
+over sailing (49%) and Rust (45%); clicking the top hit opened Sourdough troubleshooting
+with the assistant reply focused. Not covered: large histories (the scan is a linear
+dot product over every vector - fine to tens of thousands of passages, no ANN), a chat
+edited after indexing (the incremental path is self-test only), the Rebuild / Clear
+buttons, and the branch switch for a hit off the current branch (self-test does not
+cover focusMessageInChat).
+

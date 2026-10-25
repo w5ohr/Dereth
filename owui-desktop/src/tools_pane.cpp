@@ -473,6 +473,7 @@ void App::drawToolsPane() {
 
     case Tab::LocalIndex: {
       drawLocalIndexSection(width);
+      drawChatIndexCard(width);
       break;
     }
 

@@ -21,6 +21,7 @@
 
 #include "app.h"
 #include "html_markdown.h"
+#include "local_embed.h"
 #include "core/async.h"
 #include "core/common.h"
 #include "core/http.h"
@@ -1516,6 +1517,12 @@ void App::indexFolderLocally(const std::string& folder) {
 }
 
 // Blocking: embeds the query over the network. Call it from a worker.
+bool embedTexts(const std::vector<std::string>& inputs, std::vector<std::vector<float>>* out, std::string* error) {
+  return embed(ollamaBase(), inputs, out, error);
+}
+
+std::string embedModelName() { return kEmbedModel; }
+
 std::string htmlToMarkdownText(const std::string& html, const std::string& baseUrl, std::string* title) {
   std::string t;
   const std::string out = htmlToMarkdown(html, baseUrl, &t);

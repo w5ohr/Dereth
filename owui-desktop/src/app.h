@@ -399,6 +399,19 @@ class App {
   static bool isScriptToolServer(const std::string& serverId);
   agents::ToolOutcome callScriptTool(const std::string& name, const Json& args, const std::string& projectFolder);
   void drawScriptToolsCard(float width);
+
+  // --- semantic chat search (chat_index.cpp) --------------------------------
+  // Every mirrored chat embedded locally; the sidebar's "By meaning" search.
+  void tickChatIndex();
+  void indexChatsNow(bool full);
+  void drawChatIndexCard(float width);
+  void drawSemanticSearchResults(float width);
+  void focusMessageInChat(const std::string& messageId);
+  bool chatSearchSemantic = false;
+  bool semanticSearchDirty = false;
+  double semanticSearchAt = 0.0;
+  std::string chatIndexStatus;
+  std::string pendingFocusMessage;   // focus this message once its chat has opened
   std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
   void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
   void mcpImportConfig(const std::string& path);

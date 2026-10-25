@@ -55,8 +55,11 @@ void App::drawSidebar(float width) {
   }
   ImGui::Dummy(ImVec2(0, 8));
 
-  if (widgets::searchField("chatsearch", &chatSearch, "Search chats", inner)) {
-    if (chatSearch.size() >= 2) {
+  if (widgets::searchField("chatsearch", &chatSearch, chatSearchSemantic ? "Search chats by meaning" : "Search chats", inner)) {
+    if (chatSearchSemantic) {
+      semanticSearchDirty = true;
+      semanticSearchAt = core::nowMillis();
+    } else if (chatSearch.size() >= 2) {
       const std::string query = chatSearch;
       // The local copy answers instantly and is all there is offline; the
       // server's results replace it when they arrive.
@@ -96,6 +99,22 @@ void App::drawSidebar(float width) {
     }
   }
 
+  {
+    bool semantic = chatSearchSemantic;
+    if (ImGui::Checkbox("By meaning", &semantic)) {
+      chatSearchSemantic = semantic;
+      if (semantic) {
+        semanticSearchDirty = true;
+        semanticSearchAt = core::nowMillis();
+      } else {
+        refreshChats(false);
+      }
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Search every chat by what it is about, through the local embedding index (Tools > Local index), not just by words");
+    }
+  }
+
   ImGui::Dummy(ImVec2(0, 10));
   if (offlineList) {
     widgets::pill("Offline - showing the local copy", theme::palette().panelAlt, theme::palette().warning);
@@ -103,6 +122,13 @@ void App::drawSidebar(float width) {
   }
 
   ImGui::BeginChild("##chatlist", ImVec2(inner, -10));
+  if (chatSearchSemantic && core::trim(chatSearch).size() >= 3) {
+    drawSemanticSearchResults(inner);
+    ImGui::EndChild();
+    ImGui::Unindent(12.0f);
+    ImGui::EndChild();
+    return;
+  }
 
   // --- folders -------------------------------------------------------------
   if (!folders.empty()) {
