@@ -20,6 +20,7 @@
 #include <thread>
 
 #include "app.h"
+#include "html_markdown.h"
 #include "core/async.h"
 #include "core/common.h"
 #include "core/http.h"
@@ -1515,6 +1516,13 @@ void App::indexFolderLocally(const std::string& folder) {
 }
 
 // Blocking: embeds the query over the network. Call it from a worker.
+std::string htmlToMarkdownText(const std::string& html, const std::string& baseUrl, std::string* title) {
+  std::string t;
+  const std::string out = htmlToMarkdown(html, baseUrl, &t);
+  if (title) *title = t;
+  return out;
+}
+
 std::vector<std::pair<std::string, std::string>> App::localSearch(const std::string& query, int k) {
   std::string error;
   std::vector<std::pair<std::string, std::string>> out;

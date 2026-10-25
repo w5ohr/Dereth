@@ -393,6 +393,7 @@ class App {
   std::shared_ptr<mcp::Client> mcpClient(const std::string& serverId) const;
   int mcpConnectedCount() const;
   std::vector<agents::ToolSpec> mcpToolSpecs() const;
+  void drawBrowserToolCard(float width);   // browser_tool.cpp: the built-in browser tool's card in the MCP tab
   std::string mcpApprovalFor(const std::string& qualifiedName) const;   // ask | always | never
   void setMcpApproval(const std::string& qualifiedName, const std::string& policy);
   void mcpImportConfig(const std::string& path);

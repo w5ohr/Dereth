@@ -446,6 +446,7 @@ int runRepoMapSelfTest();
 int runAuditSelfTest();
 int runBackendsSelfTest();
 int runDocTextSelfTest();
+int runBrowserSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -467,6 +468,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--audittest") return runAuditSelfTest();
     if (std::string(argv[i]) == "--backendstest") return runBackendsSelfTest();
     if (std::string(argv[i]) == "--doctest") return runDocTextSelfTest();
+    if (std::string(argv[i]) == "--browsertest") return runBrowserSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {

@@ -402,6 +402,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   files and Open WebUI tools are skipped. Resources and prompts are listed;
   `roots/list` answers with the project folder. `--mcptest` exercises it all
   against `tools/mcp_test_server.py`.
+- **Browser tool:** a built-in tool server named `browser` sits beside the
+  MCP ones whenever MCP tools are on: `fetch` downloads a page (or PDF, JSON,
+  text) and hands the model readable Markdown with the title; `render` loads
+  it in a headless WebKit view so scripts run, then returns the visible text
+  and links; `links` lists a page's links; `screenshot` saves a PNG of the
+  first screen; `search` queries DuckDuckGo's HTML page (no key) and returns
+  titles, URLs and snippets. Every call goes through the usual approval card.
+  Only http(s) to public hosts unless "allow local hosts" is on; results are
+  clipped to a size you set. The card under Tools ▸ MCP has Try fetch / Try
+  render. `Open WebUI --browsertest` checks the URL policy and parsers.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

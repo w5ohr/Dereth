@@ -15,6 +15,8 @@
 #include <map>
 #include <mutex>
 
+#include <nlohmann/json.hpp>
+
 #include "core/common.h"
 #include "imgui.h"
 
@@ -868,8 +870,23 @@ namespace {
 @property(nonatomic, copy) void (^done)(NSData* png);
 @property(nonatomic) BOOL busy;
 @property(nonatomic) int generation;
+// URL jobs (browseUrl): extract text + links after the load settles.
+@property(nonatomic) BOOL browsing;
+@property(nonatomic) BOOL wantPng;
+@property(nonatomic) int settleMs;
+@property(nonatomic, copy) void (^doneBrowse)(NSData* png, NSString* json, NSString* error);
 - (void)finish:(NSData*)png generation:(int)generation;
+- (void)extractForGeneration:(int)generation note:(NSString*)note;
+- (void)finishBrowse:(NSData*)png json:(NSString*)json error:(NSString*)error generation:(int)generation;
 @end
+
+static NSString* const kBrowseExtractScript =
+    @"(function(){function clean(s){return (s||'').replace(/[ \\t]+/g,' ').replace(/ *\\n */g,'\\n').replace(/\\n{3,}/g,'\\n\\n').trim();}"
+     "var links=[],seen={},as=document.querySelectorAll('a[href]');"
+     "for(var i=0;i<as.length&&links.length<150;i++){var a=as[i],h=a.href;if(!h||!/^https?:/.test(h)||seen[h])continue;"
+     "var t=(a.innerText||a.getAttribute('aria-label')||a.title||'').trim().replace(/\\s+/g,' ');if(!t)continue;seen[h]=1;links.push([t.slice(0,120),h]);}"
+     "var main=document.querySelector('main,article,[role=main]')||document.body;"
+     "return JSON.stringify({title:document.title||'',url:location.href,text:clean(main?main.innerText:'').slice(0,400000),links:links});})()";
 
 @implementation OWUIOffscreenRenderer
 - (void)userContentController:(WKUserContentController*)controller didReceiveScriptMessage:(WKScriptMessage*)message {
@@ -907,10 +924,60 @@ namespace {
 }
 - (void)webView:(WKWebView*)webView didFailProvisionalNavigation:(WKNavigation*)navigation withError:(NSError*)error {
   core::debugLog("offscreen: navigation failed: %s", [[error localizedDescription] UTF8String]);
+  if (self.browsing) {
+    [self finishBrowse:nil json:nil error:[error localizedDescription] generation:self.generation];
+    return;
+  }
   [self finish:nil generation:self.generation];
 }
+- (void)webView:(WKWebView*)webView didFailNavigation:(WKNavigation*)navigation withError:(NSError*)error {
+  if (!self.browsing) return;
+  // A page that loaded something before failing still gets read.
+  [self extractForGeneration:self.generation note:[error localizedDescription]];
+}
 - (void)webView:(WKWebView*)webView didFinishNavigation:(WKNavigation*)navigation {
-  core::debugLog("offscreen: page loaded, waiting for done()");
+  if (!self.browsing) {
+    core::debugLog("offscreen: page loaded, waiting for done()");
+    return;
+  }
+  core::debugLog("offscreen: url loaded, settling %d ms", self.settleMs);
+  const int generation = self.generation;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)self.settleMs * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    [self extractForGeneration:generation note:nil];
+  });
+}
+- (void)extractForGeneration:(int)generation note:(NSString*)note {
+  if (!self.busy || !self.browsing || generation != self.generation) return;
+  [self.view evaluateJavaScript:kBrowseExtractScript completionHandler:^(id result, NSError* jsError) {
+    if (!self.busy || generation != self.generation) return;
+    NSString* json = [result isKindOfClass:[NSString class]] ? result : nil;
+    NSString* err = note;
+    if (!json && jsError) err = [jsError localizedDescription];
+    if (!self.wantPng) {
+      [self finishBrowse:nil json:json error:err generation:generation];
+      return;
+    }
+    WKSnapshotConfiguration* config = [[WKSnapshotConfiguration alloc] init];
+    config.rect = self.view.bounds;
+    [self.view takeSnapshotWithConfiguration:config completionHandler:^(NSImage* image, NSError* snapError) {
+      NSData* png = nil;
+      if (image && !snapError) {
+        CGImageRef cg = [image CGImageForProposedRect:nil context:nil hints:nil];
+        if (cg) png = [[[NSBitmapImageRep alloc] initWithCGImage:cg] representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+      }
+      [self finishBrowse:png json:json error:err generation:generation];
+    }];
+  }];
+}
+- (void)finishBrowse:(NSData*)png json:(NSString*)json error:(NSString*)error generation:(int)generation {
+  if (!self.busy || generation != self.generation) return;
+  core::debugLog("offscreen: browse finished %s%s", json ? "with text" : "without text", error ? " (error)" : "");
+  self.busy = NO;
+  self.browsing = NO;
+  [self.view stopLoading];
+  void (^cb)(NSData*, NSString*, NSString*) = self.doneBrowse;
+  self.doneBrowse = nil;
+  if (cb) cb(png, json, error);
 }
 - (void)finish:(NSData*)png generation:(int)generation {
   core::debugLog("offscreen: finish %s (%zu bytes)", png ? "ok" : "empty", png ? (size_t)png.length : (size_t)0);
@@ -953,12 +1020,19 @@ static OWUIOffscreenRenderer* offscreenRenderer() {
   return r;
 }
 
-// Serial queue of render jobs, all driven from the main thread.
+// Serial queue of render jobs, all driven from the main thread. A job is
+// either HTML to snapshot (done) or a URL to read (browse).
 struct OffscreenJob {
   std::string html;
   float width;
   int timeoutMs;
   std::function<void(std::string)> done;
+  // URL jobs:
+  std::string url;
+  float height = 200;
+  int settleMs = 0;
+  bool wantPng = false;
+  std::function<void(std::string png, std::string json, std::string error)> browse;
 };
 static std::deque<OffscreenJob> gOffscreenJobs;
 
@@ -969,7 +1043,44 @@ static void pumpOffscreen() {
   gOffscreenJobs.pop_front();
   r.busy = YES;
   const int generation = ++r.generation;
+  if (job.browse) {
+    const auto browse = job.browse;
+    r.browsing = YES;
+    r.wantPng = job.wantPng;
+    r.settleMs = job.settleMs;
+    r.doneBrowse = ^(NSData* png, NSString* json, NSString* error) {
+      std::string pngBytes, jsonText, errorText;
+      if (png) pngBytes.assign(static_cast<const char*>(png.bytes), png.length);
+      if (json) jsonText = json.UTF8String ? json.UTF8String : "";
+      if (error) errorText = error.UTF8String ? error.UTF8String : "";
+      browse(pngBytes, jsonText, errorText);
+      dispatch_async(dispatch_get_main_queue(), ^{ pumpOffscreen(); });
+    };
+    NSRect frame = NSMakeRect(0, 0, job.width, job.height);
+    [r.window setContentSize:frame.size];
+    r.view.frame = frame;
+    NSURL* nsUrl = [NSURL URLWithString:toNs(job.url)];
+    if (!nsUrl) {
+      [r finishBrowse:nil json:nil error:@"bad URL" generation:generation];
+      return;
+    }
+    NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:nsUrl];
+    request.timeoutInterval = job.timeoutMs / 1000.0;
+    [r.view loadRequest:request];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)job.timeoutMs * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+      if (r.busy && r.generation == generation) {
+        core::debugLog("offscreen: browse timed out after %d ms - reading what is there", job.timeoutMs);
+        [r extractForGeneration:generation note:@"timed out while loading; this is what the page showed by then"];
+        // The extraction itself can hang on a wedged page: hard stop after another 3 s.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+          if (r.busy && r.generation == generation) [r finishBrowse:nil json:nil error:@"timed out" generation:generation];
+        });
+      }
+    });
+    return;
+  }
   const auto done = job.done;
+  r.browsing = NO;
   r.done = ^(NSData* png) {
     std::string bytes;
     if (png) bytes.assign(static_cast<const char*>(png.bytes), png.length);
@@ -1006,6 +1117,50 @@ std::string renderHtmlToPng(const std::string& html, float width, int timeoutMs)
   // A job that never settles (the timeout fires on the main thread) still
   // signals; this wait is only a last resort.
   if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeoutMs + 5000) * NSEC_PER_MSEC)) != 0) return "";
+  return *result;
+}
+
+BrowseResult browseUrl(const std::string& url, float width, float height, int timeoutMs, int settleMs, bool wantPng) {
+  BrowseResult out;
+  out.url = url;
+  if ([NSThread isMainThread]) {
+    out.error = "browseUrl cannot run on the main thread";
+    return out;
+  }
+  dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+  auto result = std::make_shared<BrowseResult>();
+  result->url = url;
+  OffscreenJob job;
+  job.url = url;
+  job.width = width;
+  job.height = height;
+  job.timeoutMs = timeoutMs;
+  job.settleMs = settleMs;
+  job.wantPng = wantPng;
+  job.browse = [result, sem](std::string png, std::string json, std::string error) {
+    result->png = std::move(png);
+    result->error = std::move(error);
+    if (!json.empty()) {
+      nlohmann::json j = nlohmann::json::parse(json, nullptr, false);
+      if (j.is_object()) {
+        result->title = j.value("title", "");
+        if (!j.value("url", "").empty()) result->url = j["url"];
+        result->text = j.value("text", "");
+        for (const auto& link : j.value("links", nlohmann::json::array())) {
+          if (link.is_array() && link.size() == 2 && link[0].is_string() && link[1].is_string()) result->links.push_back({link[0], link[1]});
+        }
+      }
+    }
+    dispatch_semaphore_signal(sem);
+  };
+  dispatch_async(dispatch_get_main_queue(), ^{
+    gOffscreenJobs.push_back(job);
+    pumpOffscreen();
+  });
+  if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeoutMs + 8000) * NSEC_PER_MSEC)) != 0) {
+    out.error = "timed out";
+    return out;
+  }
   return *result;
 }
 

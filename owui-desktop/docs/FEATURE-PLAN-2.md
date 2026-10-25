@@ -1032,3 +1032,33 @@ Word's page-break markers (most generated files) gets "part N" labels not real p
 Excel numbers are raw (no formats), textutil formats and the server-chat upload fallback
 were self-test / code-path only.
 
+2026-10-25 IV (88 browser tool): `src/browser_tool.{h,cpp}` - a built-in tool server
+"browser" (serverId builtin:browser) whose five tools join mcpToolSpecs() whenever MCP
+tools are on and extra["browserTool"] (default on) allows: fetch (libcurl GET capped at
+8 MB; HTML -> Markdown through the URL-capture converter, now exported as
+app::htmlToMarkdownText in `src/html_markdown.h`; PDF -> pages via doctext; text / JSON
+raw; binary refused), render / links / screenshot (the offscreen WKWebView from #62
+gained a URL mode: `native::browseUrl` loads the page, waits `wait_ms`, evaluates a script
+that returns title, main/article/body innerText and up to 150 links as JSON, snapshots
+the viewport when asked; a timeout reads what the page shows by then and says so;
+didFailNavigation after a partial load still extracts) and search (DuckDuckGo's HTML
+endpoint, parsed for result__a / result__snippet with the uddg target decoded, ads
+dropped). URL policy: http(s) only; localhost, loopback, 10/8, 172.16/12, 192.168/16,
+169.254/16, 100.64/10, ::1, .local / .localhost / .internal blocked unless
+extra["browserToolAllowLocal"]; results clipped to extra["browserToolMaxChars"] (default
+12000) with a truncation note. Every call runs through the existing approval card and is
+audited like any tool. `drawBrowserToolCard` in the MCP tab: on/off, allow-local, size
+slider, Try fetch / Try render with the result in a box. `--browsertest` runs 12 offline
+checks (policy, clip, percent-decoding, result-page parsing, specs, refusals, the
+Markdown wrapper). Verified on a scratch server in a private chat with qwen3:8b: "fetch
+example.com" raised the approval card, Allow once ran it in 87 ms and the model then
+asked for links (WKWebView path, 1060 ms, "url loaded, settling 800 ms" in the log) and
+answered "Example Domain" with the iana.org link; a second prompt ran search (783 ms) and
+listed three real DuckDuckGo results (open-webui/desktop on GitHub, another desktop repo,
+openwebui.com); the audit log shows example.com GET / and html.duckduckgo.com GET /html/
+plus the three tool decisions. Try render on the MCP-tab card returned example.com's title, final URL and visible text
+(its Arabic and Chinese paragraphs included). Not covered: screenshot (code path only)
+and render as a model call (links exercised the same WKWebView path), a PDF or JSON fetch,
+a JavaScript-only page, and DuckDuckGo's layout is a scrape that can break without
+notice (the tool then says so and suggests fetching a likely URL).
+

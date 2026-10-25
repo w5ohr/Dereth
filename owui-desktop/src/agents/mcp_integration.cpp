@@ -5,6 +5,7 @@
 // extra["mcpApprovals"] ({"<server>__<tool>": "always"|"never"}),
 // extra["mcpEnabled"], extra["mcpAutoApprove"], extra["mcpMaxRounds"].
 #include "app.h"
+#include "browser_tool.h"
 
 #include "plugins/plugin_host.h"
 
@@ -222,6 +223,10 @@ std::vector<agents::ToolSpec> App::mcpToolSpecs() const {
       spec.tool = tool.name;
       out.push_back(spec);
     }
+  }
+  // The built-in browser tool is a "server" of its own.
+  if (browsertool::optionsFromSettings().enabled) {
+    for (const agents::ToolSpec& spec : browsertool::specs()) out.push_back(spec);
   }
   // Plugin tools sit beside the MCP ones; their "server" is the plugin.
   for (const plugins::Tool& tool : plugins::Host::instance().tools()) {
@@ -476,6 +481,17 @@ agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
       out.error = "unknown tool '" + call.name + "'";
       return out;
     }
+    if (spec->second.serverId == browsertool::kServerId) {
+      const double started = core::nowMillis();
+      std::string error;
+      out.text = browsertool::call(spec->second.tool, call.args, browsertool::optionsFromSettings(), &error);
+      out.durationMs = core::nowMillis() - started;
+      if (!error.empty()) {
+        out.isError = true;
+        out.text = error;
+      }
+      return out;
+    }
     if (core::startsWith(spec->second.serverId, "plugin:")) {
       const double started = core::nowMillis();
       std::string error;
@@ -728,6 +744,8 @@ void App::drawMcpSection(float width) {
     ImGui::PopTextWrapPos();
     ImGui::PopStyleColor();
   }, width);
+
+  drawBrowserToolCard(width);
 
   if (servers.empty()) {
     emptyState("No MCP servers yet. Add one, or import your Claude Desktop or Cursor configuration.");

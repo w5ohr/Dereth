@@ -141,6 +141,16 @@ std::vector<std::string> artifactConsole();     // messages since the last load,
 // `timeoutMs`; "" on error or timeout. Jobs run one at a time.
 std::string renderHtmlToPng(const std::string& html, float width, int timeoutMs);
 
+// Loads a URL in the same offscreen view (scripts run), waits `settleMs`
+// after the load, and returns the page's title, visible text and links -
+// plus a PNG of the viewport when asked. On a timeout it returns whatever
+// the page shows by then with `error` set. Blocking; never from the main thread.
+struct BrowseResult {
+  std::string title, url, text, png, error;
+  std::vector<std::pair<std::string, std::string>> links;   // text, href
+};
+BrowseResult browseUrl(const std::string& url, float width, float height, int timeoutMs, int settleMs, bool wantPng);
+
 // Document pane: a PDFKit view floated over the ImGui document column, used
 // to show the PDF behind a citation with the cited passage highlighted.
 void pdfInstall();
