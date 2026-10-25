@@ -784,6 +784,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   drawing stays in the window until cleared. `Open WebUI --sketchtest`
   covers the strokes, undo / redo, the rasteriser (including joints), the
   trim and the PNG encoder, decoded back with stb_image.
+- **LSP context:** with a project folder set (the composer's Project
+  button) and Settings ▸ LSP context on, identifiers a question names -
+  `backticked`, `a::b`, `a.b`, snake_case, camelCase and `f()` calls - are
+  looked up with the folder's language servers before the message goes out,
+  and each match's signature, doc comment (hover) and definition source (up
+  to 40 lines) are added as a system message. clangd, pyright,
+  typescript-language-server, gopls and rust-analyzer are used when
+  installed; the card shows which were found and has a "try a question" box
+  that shows the exact block. Servers start on the first lookup and stay up;
+  clangd runs without its background index so nothing is written into the
+  project (a `compile_commands.json` in `build/` gives it real include
+  paths). `Open WebUI --lsptest` covers the framing, the identifier scan,
+  symbol flattening, hover text and the block, plus a live clangd round
+  trip when clangd is installed.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

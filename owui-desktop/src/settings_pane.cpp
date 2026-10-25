@@ -78,6 +78,9 @@ void App::drawSettingsPane() {
   drawReadingModeSection(width);
   ImGui::Dummy(ImVec2(0, 8));
 
+  widgets::sectionHeader("LSP CONTEXT");
+  card("lsp", [&] { drawLspSection(width); }, width);
+
   widgets::sectionHeader("LAYOUTS");
   card("layouts", [&] { drawLayoutsSection(width); }, width);
 

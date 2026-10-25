@@ -359,6 +359,8 @@ void App::drawPalette() {
   add("Image gallery (generated images, prompts, favourites)", "images", [this] { pane = Pane::Images; });
   add("Knowledge graph (entities across memories, notes and knowledge bases)", "tools", [this] { openGraphTab(); });
   add("Sketch input (draw and attach to the message)", "chat", [this] { pane = Pane::Chat; openSketch(); });
+  add("LSP context (clangd / pyright definitions sent with code questions)", "settings", [this] { pane = Pane::Settings; });
+  add("Stop the language servers", "command", [this] { async::run([this] { stopLspServers(); }); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
   add("Propose memories from this reply", "command", [this] {

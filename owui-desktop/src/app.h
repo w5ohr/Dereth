@@ -848,6 +848,13 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- LSP context (lsp_context.cpp) ----------------------------------------
+  std::string lspLookup(const std::string& question, const std::string& folder, std::string* log);   // blocking
+  void addLspContext(Json* payload, const std::string& question, const std::string& folder);         // worker thread
+  std::string lspProjectFolder() const;
+  void stopLspServers();
+  void drawLspSection(float width);
+
   // --- sketch input (sketch_pane.cpp) ---------------------------------------
   bool showSketch = false;
   void openSketch();

@@ -1990,3 +1990,49 @@ the per-stroke coverage mask replaced per-segment blending, a self-test check pi
 and a second real run (a triangle, sent and decoded from the wire) came out clean. Not
 covered: a vision model's answer (none is installed locally; qwen3:8b is text-only), the
 eraser and width slider beyond the self-test, and pressure or smoothing (none).
+
+2026-10-25 97 (LSP context): `src/core/lsp.*` - a minimal LSP client: posix_spawn with
+three pipes and chdir to the project, Content-Length `Framer`, a reader thread matching
+responses by id (requests from the server - workspace/configuration, progress,
+registration - answered with null so it never waits), `request` with a timeout,
+`notify`, `openFile` (didOpen once per path), initialize / initialized with
+hierarchical document symbols and markdown hover, shutdown / exit / SIGKILL fallback.
+Pure helpers: `defaultServers` (clangd --background-index=false, pyright-langserver,
+typescript-language-server, gopls, rust-analyzer by extension), `findExecutable` (PATH
+plus Homebrew, /usr/local, ~/.local, ~/.cargo, ~/go), `languageIdFor`, `pathToUri` /
+`uriToPath` (percent-encoding), `flattenDocumentSymbols` (DocumentSymbol trees with the
+container chain, SymbolInformation with containerName, clangd's "a::b" out-of-line
+names split), `termsFromQuestion` (backticks, a::b, a.b with no space after the dot,
+f() of 3+ chars, snake_case, inner-capital camelCase; words after '/' skipped, so
+/no_think and path pieces are not searched; capped at 6), `matches` / `bestMatch`
+(qualifier respected; the longest range - a body - wins, types and functions first),
+`hoverText` (MarkupContent, MarkedString, arrays; capped), `snippet` (inclusive, 40
+lines, "... N more lines"), `formatBlock` (relative path:line, budget 9000 chars).
+`src/lsp_context.cpp`: one session per server and folder, lookups serialised; per
+term, `workspace/symbol` first, else the files that mention the name (regex, defining
+lines and implementation files first, up to 3) are opened and their documentSymbol
+read; a match whose range is a single line (workspace symbols locate only the name) is
+widened from the file's documentSymbol so the body comes along; hover at the selection
+start, the source lines read from disk; `addLspContext` inserts the block as the first
+system message on both server streaming branches (socket and HTTP) on the worker,
+after the local-index hits; the question and folder are captured on the main thread.
+Settings "LSP CONTEXT" card before Layouts (switch, symbols at most 1-8, the project
+folder, a servers table with the executable found or "not found", a try-a-question box
+showing the block and a log line, Stop servers, the last message's log); two palette
+entries. `--lsptest` runs 12 checks incl. a live clangd round trip on a temp two-file
+project (documentSymbol finds geo::area with its 3-line range; hover carries
+`int area(int w, int h)` and the doc comment; clean shutdown). Verified on a scratch
+home with this repo as the project folder (build/compile_commands.json exported into
+the git-ignored build dir): the card listed /usr/bin/clangd and the others not found;
+"How does pool::order rank the members, and what does runPoolSelfTest() check?" gave
+"2 symbols in 4034 ms via clangd (298 files)" with pool::order at src/core/pool.cpp:51,
+clangd's typed signature and parameters; sending a pool::order question in a chat put
+the block first in the request (seen in the Traffic tab's captured body). Two defects
+fixed on the way: with clangd warm, workspace/symbol answered with name-only ranges so
+only the definition's first line was sent and qwen3:8b guessed ("likely influences") -
+after widening the range the block carried the 16-line body and the answer described
+round-robin, first-alive and the sort by load correctly; and "/no_think" was searched
+as an identifier. Not covered: pyright / typescript / gopls / rust-analyzer (not
+installed here), the private-chat and MCP tool-loop paths (the block is added on the
+two server paths only), and very large projects (the file walk stops at 8000 entries,
+the grep reads at most 2500 files).

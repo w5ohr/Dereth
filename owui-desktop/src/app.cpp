@@ -943,6 +943,14 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   const bool useStreaming = settings().streamResponses;
   lastPayload = payload;
   const bool useLocalIndex = localIndexEnabled;
+  // LSP context: the question this reply answers and the project folder.
+  std::string lspQuestion;
+  {
+    auto self = chat.messages.find(assistantId);
+    auto parent = self == chat.messages.end() ? chat.messages.end() : chat.messages.find(self->second.parentId);
+    if (parent != chat.messages.end() && parent->second.role == "user") lspQuestion = parent->second.content;
+  }
+  const std::string lspFolder = lspProjectFolder();
   std::string indexQuery;
   if (useLocalIndex) {
     auto assistant = chat.messages.find(assistantId);
@@ -964,9 +972,10 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
     stream->viaSocket = true;
     payload["session_id"] = socket_.sessionId();
     const std::shared_ptr<Stream> handle = stream;
-    async::run([this, handle, payload, useLocalIndex, indexQuery] {
+    async::run([this, handle, payload, useLocalIndex, indexQuery, lspQuestion, lspFolder] {
       Json body = payload;
       if (useLocalIndex) addLocalIndexHits(this, &body, indexQuery);
+      addLspContext(&body, lspQuestion, lspFolder);
       api::Result res = api_.completion(body);
       async::post([this, handle, res] {
         if (!res.ok) {
@@ -991,9 +1000,10 @@ void App::startStream(const std::string& assistantId, const std::string& model) 
   // go to a socket that isn't there - so drop it and save the result ourselves.
   payload.erase("chat_id");
 
-  async::runDetached([this, stream, payload, useStreaming, useLocalIndex, indexQuery] {
+  async::runDetached([this, stream, payload, useStreaming, useLocalIndex, indexQuery, lspQuestion, lspFolder] {
     Json body = payload;
     if (useLocalIndex) addLocalIndexHits(this, &body, indexQuery);
+    addLspContext(&body, lspQuestion, lspFolder);
     if (useStreaming) {
       api::Result res = api_.streamCompletion(
           body,
