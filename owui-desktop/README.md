@@ -248,6 +248,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Recipes:** Tools ▸ Recipes saves chains of prompts. Each step can use
+  `{{prev}}` (the previous reply), `{{step:N}}` and the prompt variables;
+  `{{input:Label}}` fields are asked once before the run. A run opens a new
+  chat and sends the steps one after another as each reply finishes, so the
+  whole chain is kept. Run from the tab, the palette ("Run recipe: ...") or
+  a daily schedule; three example recipes are one click away.
 - **Backup and import:** Tools ▸ Backup exports everything to one zip -
   every chat as JSON, the settings (tokens stay in the keychain), usage log,
   plugins, the offline mirror and, if you tick it, the encrypted private

@@ -332,6 +332,11 @@ void App::drawPalette() {
   add("Compare models", "command", [this] { openModelCompare(); });
   add("Usage dashboard (Tools > Usage)", "command", [this] { pane = Pane::Tools; });
   add("Export everything to a backup zip", "command", [this] { exportEverything(); });
+  for (const recipes::Recipe& r : recipeList()) {
+    const std::string id = r.id;
+    add("Run recipe: " + r.name, "recipe - " + std::to_string(r.steps.size()) + " steps", [this, id] { runRecipe(id); });
+  }
+  if (recipeRunning()) add("Stop the running recipe", "command", [this] { stopRecipe(); });
   add("Import chats (ChatGPT, Claude, backup)", "command", [this] { importChats(); });
   add("Toggle agent mode", "command", [this] {
     agentMode = !agentMode;
@@ -865,11 +870,17 @@ void App::tickScheduler() {
     if (!s.enabled || s.lastRunDay == today) continue;
     if (s.weekdaysOnly && (local.tm_wday == 0 || local.tm_wday == 6)) continue;
     if (local.tm_hour < s.hour || (local.tm_hour == s.hour && local.tm_min < s.minute)) continue;
-    // Fire: a fresh chat with the prompt, so the output is kept and titled.
-    if (!s.model.empty()) selectedModels = {s.model};
-    newChat();
-    chat.title = s.name.empty() ? "Scheduled: " + s.prompt.substr(0, 40) : s.name;
-    sendMessage(s.prompt);
+    // Fire: a fresh chat with the prompt, so the output is kept and titled;
+    // a "recipe:<id>" prompt runs that recipe instead.
+    if (core::startsWith(s.prompt, "recipe:")) {
+      if (recipeRunning()) continue;
+      runRecipe(s.prompt.substr(7));
+    } else {
+      if (!s.model.empty()) selectedModels = {s.model};
+      newChat();
+      chat.title = s.name.empty() ? "Scheduled: " + s.prompt.substr(0, 40) : s.name;
+      sendMessage(s.prompt);
+    }
     s.lastRunDay = today;
     item = s.toJson();
     changed = true;

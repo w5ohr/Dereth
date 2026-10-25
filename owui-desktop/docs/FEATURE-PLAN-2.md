@@ -827,3 +827,24 @@ carried __MACOSX resource-fork entries - ditto now runs with --norsrc --noextatt
 re-run). Not covered: importing a backup zip whole (unzip it and pick the chats/ files),
 restoring settings or the mirror from a backup (copy them into the support folder), and
 ChatGPT exports with images or tool nodes (text parts only).
+
+2026-10-24 IV (84 recipes): `src/core/recipes.{h,cpp}` (Recipe {id, name, description,
+model, steps[{prompt, model}], newChatPerRun} with JSON round-trip; `inputs` collects the
+{{input:}} fields across steps; `expandStep` splices {{prev}} / {{step:N}} from the
+replies so far behind markers so their text is never re-scanned, then runs the prompt
+variables; three example recipes) and `src/recipes_pane.cpp` (settings extra["recipes"];
+Tools > Recipes with a card per recipe - Run / Edit / Schedule daily 08:00 / Delete - an
+editor modal with per-step prompts and optional per-step models, "Add the examples"; the
+runner: inputs form once, a fresh chat titled "Recipe: <name>", each step sent with
+`sendMessage` (prompt-variable form skipped since the step is already expanded; redaction
+still applies) and the next sent from `tickRecipe` once the awaited reply finished without
+an error; Stop; palette entries "Run recipe: <name>" per recipe and "Stop the running
+recipe"; a schedule whose prompt is "recipe:<id>" runs the recipe in `tickScheduler`).
+`--recipetest` runs 8 offline checks. Verified against a scratch server with qwen3:8b:
+"Add the examples" listed three recipes; Run on "Explain, then quiz me" opened the inputs
+form with the Topic field focused, "tides" + Enter started a chat "Recipe: Explain, then
+quiz me", step 1 explained tides, step 2 went out with the explanation spliced in for
+{{prev}} and came back as three questions with answers, and the finish toast fired; the
+chat on the server held both turns. Not exercised: a global hotkey per recipe (the item
+mentions one; the palette is the keyboard route), the scheduler path (same code as
+scheduled prompts, which the earlier sweep covered), per-step model switches.

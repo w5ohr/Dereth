@@ -1632,6 +1632,8 @@ void App::frame() {
     drawContextInspector();
     drawPromptForm();
     drawRedactionSheet();
+    drawRecipeInputs();
+    tickRecipe();
     pluginsTick();
     drawCitationPopup();
     drawProjectFilesPopup();

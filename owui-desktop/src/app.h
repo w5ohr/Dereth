@@ -19,6 +19,7 @@
 #include "core/pty.h"
 #include "core/promptvars.h"
 #include "core/contextfit.h"
+#include "core/recipes.h"
 #include "core/redact.h"
 #include "core/settings.h"
 #include "core/socketio.h"
@@ -443,6 +444,20 @@ class App {
   void drawPluginsSection(float width);
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
+
+  // --- recipes (recipes_pane.cpp) -------------------------------------------
+  // Saved prompt chains, run step by step in a chat; inputs asked once.
+  std::vector<recipes::Recipe> recipeList() const;
+  void saveRecipe(const recipes::Recipe& recipe);
+  void deleteRecipe(const std::string& id);
+  void runRecipe(const std::string& id);
+  void startRecipeRun();
+  void recipeSendNext();
+  void tickRecipe();
+  void stopRecipe();
+  bool recipeRunning() const;
+  void drawRecipeInputs();
+  void drawRecipesSection(float width);
 
   // --- backup and import (backup.cpp) ---------------------------------------
   void exportEverything();
