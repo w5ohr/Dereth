@@ -1641,3 +1641,23 @@ row (and, after a second build, the code-block button rows) and saved the prefer
 hovering the reply brought the chips and buttons back; Cmd+Shift+R again restored the
 sidebar and the normal layout with an "off" toast. Not covered: the Settings sliders
 beyond rendering, the "controls on hover" switch off, and focused-message gating.
+
+2026-10-25 64 (virtualised transcript): `src/core/virtualize.*` (`Heights` remembers each
+message's laid-out height per content width with the frame it was seen, `known` answers
+-1 for unknown or other-width entries, `prune` drops stale ones; `shouldSkip` for a block
+wholly outside the view plus a margin; `Stats` / `statsLine`). Chat pane: each frame the
+transcript loop replaces any message whose height is known and which lies more than a
+window-height outside the view with a spacer of that height (streaming, editing,
+focused, scroll-target, selected, compare-mode and search-hit messages are always
+drawn); heights are recorded right after each drawn block; extra["virtualTranscript"]
+(default on) with a switch in Settings > Chat; with OWUI_DEBUG a "transcript: drew N of M
+messages in X ms" line every two seconds. `--virtualtest` runs 6 offline checks.
+Measured on a scratch server with a seeded 1500-message chat (every fifth reply holds a
+code block): virtualisation off laid out all 1500 messages in 795-835 ms per frame; on,
+12-13 of 1500 in 7-15 ms, and after wheel-scrolling hundreds of messages up the view the
+numbers stayed at 7 ms with the transcript rendering normally (headers, bullets, code
+blocks, action rows). Lazy image decode falls out of the same culling (images render
+only when their message does); incremental markdown parsing was not done. Not covered:
+jump-to-message into a culled region beyond the self-test's reasoning, and chats whose
+message heights change with the window width (re-measured on the first frame they are
+drawn at the new width).

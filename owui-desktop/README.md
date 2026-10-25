@@ -643,6 +643,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   message is focused). Settings ▸ Reading mode sets the measure, text size,
   line spacing and the two behaviours. `Open WebUI --readingtest` covers the
   preferences and the layout decisions.
+- **Virtualised transcript:** a chat with thousands of messages scrolls
+  like a short one. Each message's height is remembered once it has been
+  laid out, and any message well outside the view is replaced by a spacer
+  of that height instead of being rendered (streaming, focused, edited,
+  selected and search-hit messages are always drawn). Scroll positions,
+  the "new text" pill and jump-to-message keep working, and images in
+  far-away messages are not decoded until you scroll near them. Off switch
+  in Settings ▸ Chat. `Open WebUI --virtualtest` covers the height memory
+  and the skip decision; with OWUI_DEBUG the log reports "transcript: drew
+  N of M messages in X ms" every two seconds.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

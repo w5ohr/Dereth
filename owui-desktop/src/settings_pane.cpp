@@ -103,6 +103,11 @@ void App::drawSettingsPane() {
     ImGui::Checkbox("Ask the server to name new chats", &cfg.autoTitle);
     ImGui::Checkbox("Notify when a reply finishes", &cfg.notifyOnCompletion);
     ImGui::Checkbox("Read replies aloud", &cfg.speakReplies);
+    bool virtualOn = cfg.extra.value("virtualTranscript", true);
+    if (ImGui::Checkbox("Lay out only the visible part of long chats (virtualised transcript)", &virtualOn)) {
+      cfg.extra["virtualTranscript"] = virtualOn;
+      cfg.save();
+    }
     widgets::dimText("Live socket: %s", socketConnected() ? "connected" : "offline");
   }, width);
 

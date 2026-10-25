@@ -2,6 +2,7 @@
 #include <algorithm>
 
 #include "app.h"
+#include "core/virtualize.h"
 #include "core/async.h"
 #include "core/common.h"
 #include "imgui_internal.h"
@@ -18,6 +19,13 @@ namespace app {
 namespace {
 
 constexpr float kMaxContentWidth = 820.0f;
+
+// Virtualised transcript: heights measured last frame, so far-away messages
+// can be replaced by spacers (core/virtualize).
+virtualize::Heights gHeights;
+int gFrameCounter = 0;
+double gStatsLoggedAt = 0.0;
+virtualize::Stats gStats;
 
 std::string gTitleEdit;
 bool gEditingTitle = false;
@@ -371,10 +379,31 @@ void App::drawChatPane() {
     }();
 
     const readingmode::Prefs reading = readingPrefs();
+    const bool virtualOn = settings().extra.value("virtualTranscript", true);
+    const float viewTop = ImGui::GetWindowPos().y;
+    const float viewBottom = viewTop + ImGui::GetWindowHeight();
+    const float viewMargin = std::max(300.0f, ImGui::GetWindowHeight());
+    ++gFrameCounter;
+    if (gFrameCounter % 600 == 0) gHeights.prune(gFrameCounter, 3600);
+    const double loopStarted = core::nowMillis();
+    int drawnCount = 0, skippedCount = 0;
     for (const std::string& messageId : path) {
       Message& message = chat.messages[messageId];
       ImGui::PushID(messageId.c_str());
       ImGui::Indent(marginX);
+      // Far outside the view and measured before: a spacer stands in for the message.
+      const bool mustDraw = message.streaming || message.editing || focusedMessageId == messageId || pendingScrollTo == messageId || selectedMessages.count(messageId) > 0 ||
+                            compareMode || (showChatSearch && !chatSearchQuery.empty());
+      const float knownHeight = virtualOn && !mustDraw ? gHeights.known(messageId, contentWidth) : -1.0f;
+      if (knownHeight >= 0.0f && virtualize::shouldSkip(ImGui::GetCursorScreenPos().y, knownHeight, viewTop, viewBottom, viewMargin)) {
+        ImGui::Dummy(ImVec2(contentWidth, knownHeight));
+        ImGui::Unindent(marginX);
+        ImGui::PopID();
+        ImGui::Dummy(ImVec2(0, 6));
+        ++skippedCount;
+        continue;
+      }
+      ++drawnCount;
       const ImVec2 blockMin = ImGui::GetCursorScreenPos();
       const bool controls = messageControlsVisible(messageId);
       if (reading.enabled) {
@@ -795,9 +824,15 @@ void App::drawChatPane() {
         theme::pop();
       }
       noteMessageRect(messageId, blockMin, ImVec2(blockMin.x + contentWidth, ImGui::GetCursorScreenPos().y));
+      gHeights.remember(messageId, ImGui::GetCursorScreenPos().y - blockMin.y, contentWidth, gFrameCounter);
       ImGui::Unindent(marginX);
       ImGui::PopID();
       ImGui::Dummy(ImVec2(0, 6));
+    }
+    gStats = virtualize::Stats{drawnCount, skippedCount, core::nowMillis() - loopStarted};
+    if (core::nowMillis() - gStatsLoggedAt > 2000.0 && !path.empty()) {
+      gStatsLoggedAt = core::nowMillis();
+      core::debugLog("transcript: %s%s", virtualize::statsLine(gStats).c_str(), virtualOn ? "" : " (virtualisation off)");
     }
 
     ImGui::Dummy(ImVec2(0, 20));
