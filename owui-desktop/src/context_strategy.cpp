@@ -137,8 +137,10 @@ std::string App::applyContextPlan(Json* messages, const std::vector<std::string>
       const Json& m = (*messages)[static_cast<size_t>(index)];
       if (m.value("role", "") != "system") {
         kept.push_back(Json{{"role", "system"},
-                            {"content", "Summary of the earlier part of this conversation (older turns were "
-                                        "folded to fit the model's context):\n" + contextSummary().value("text", "")}});
+                            {"content", "The conversation began before the messages below; those earlier turns "
+                                        "were condensed to fit the context and are part of the history. Answer "
+                                        "questions about the earlier part from this summary:\n\n" +
+                                            contextSummary().value("text", "")}});
         summaryInserted = true;
       }
     }

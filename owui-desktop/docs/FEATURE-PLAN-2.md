@@ -709,6 +709,9 @@ window showed "6 of 16 messages would be left out" in the preview; choosing the 
 and asking about turn 1 was answered wrongly from the remaining turns (expected - no
 summary yet) while the first overflow produced a 301-token summary that named every
 folded topic and year; the next question went out with "6 of 19 messages folded into the
-summary" and the reply read the correct fact back from it; the trim toast appeared on
-each send. Fixed on the way: the sliding window counted the newest user message as a
+summary" - but the reply still said "granite quarries, 1591" (the earliest turn left in
+the window) rather than the summary's "lighthouses, 1507": the summary carried the fact,
+the 8B model preferred the explicit turn text. The summary's framing was reworded to say
+it is part of the history and to answer from it (not re-verified live); the trim toast
+appeared on each send. Fixed on the way: the sliding window counted the newest user message as a
 turn boundary one step early (kept one turn too few).
