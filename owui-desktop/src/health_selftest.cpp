@@ -1,5 +1,6 @@
 // `Open WebUI --healthtest`: the system sampler returns sane numbers and the
 // ring behaves.
+#include <sys/sysctl.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -32,8 +33,14 @@ int runHealthSelfTest() {
          gb(a.memUsed) + " of " + gb(a.memTotal));
   report("cpu: unknown on the first sample, 0-100 on the second", a.cpuPercent < 0 && b.cpuPercent >= 0 && b.cpuPercent <= 100,
          std::to_string(static_cast<int>(b.cpuPercent)) + "%");
-  report("gpu: utilisation 0-100 when IOKit reports it (Apple Silicon does)", b.gpuPercent >= 0 && b.gpuPercent <= 100,
-         std::to_string(static_cast<int>(b.gpuPercent)) + "%, memory " + (b.gpuMemUsed >= 0 ? gb(b.gpuMemUsed) : "unknown"));
+  // Real Apple Silicon reports GPU statistics through IOKit; a virtual machine
+  // (a CI runner) has a paravirtual GPU that reports none, which is "unknown" (-1).
+  int vm = 0;
+  size_t vmSize = sizeof(vm);
+  if (sysctlbyname("kern.hv_vmm_present", &vm, &vmSize, nullptr, 0) != 0) vm = 0;
+  report(vm ? "gpu: utilisation 0-100, or unknown (-1) in a virtual machine" : "gpu: utilisation 0-100 when IOKit reports it (Apple Silicon does)",
+         (b.gpuPercent >= 0 && b.gpuPercent <= 100) || (vm && b.gpuPercent == -1),
+         std::to_string(static_cast<int>(b.gpuPercent)) + "%, memory " + (b.gpuMemUsed >= 0 ? gb(b.gpuMemUsed) : "unknown") + (vm ? " (virtual machine)" : ""));
   report("metal: working set and allocation reported", b.metalWorkingSet > 1e9 && b.metalAllocated >= 0, gb(b.metalWorkingSet));
   report("thermal state 0-3 with a name", b.thermal >= 0 && b.thermal <= 3 && !thermalName(b.thermal).empty(), thermalName(b.thermal));
   report("models folder and free space", !modelsFolder().empty() && b.modelsDiskFree > 0, modelsFolder() + " - " + gb(b.modelsDiskFree) + " free");
