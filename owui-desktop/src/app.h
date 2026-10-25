@@ -444,6 +444,22 @@ class App {
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
 
+  // --- git pane (git_pane.cpp) ----------------------------------------------
+  // The project folder's repository: status, stage, diff, model-drafted
+  // commit messages and PR descriptions, explain-a-diff, blame.
+  std::string gitRepo() const;
+  void drawGitSection(float width);
+  void gitRefresh();
+  void gitLoadDiff();
+  void gitStage(const std::string& path, bool stage);
+  void gitStageAll(bool stage);
+  void gitAsk(const std::string& system, const std::string& user, std::function<void(std::string)> done);
+  void gitDraftCommitMessage();
+  void gitCommit();
+  void gitExplainDiff();
+  void gitBlame();
+  void gitDraftPr();
+
   // --- model cards (model_cards.cpp) ----------------------------------------
   // Ollama `show` details per model, as tooltips and a comparison table.
   const void* modelCard(const std::string& modelId);      // opaque; fetches on first use

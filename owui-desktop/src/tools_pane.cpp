@@ -20,7 +20,7 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git };
 
 Tab gTab = Tab::Command;
 
@@ -54,6 +54,7 @@ const char* tabName(Tab tab) {
     case Tab::Mcp: return "MCP";
     case Tab::Terminal: return "Terminal";
     case Tab::Plugins: return "Plugins";
+    case Tab::Git: return "Git";
   }
   return "";
 }
@@ -197,14 +198,14 @@ void knowledgeCombo(const char* id, const Json& list, std::string* selected, flo
 }  // namespace
 
 void App::drawToolsPane() {
-  paneHeader("Tools", "Command runner, build errors, benchmark, local index, MCP servers, terminal, plugins", nullptr);
+  paneHeader("Tools", "Command runner, build errors, benchmark, local index, MCP servers, terminal, plugins, git", nullptr);
   paneBody("##tools");
   const float width = ImGui::GetContentRegionAvail().x - 18.0f;
   const auto& palette = theme::palette();
 
   if (ImGui::BeginTabBar("##toolstabs")) {
     for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex,
-                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins}) {
+                    Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git}) {
       if (ImGui::BeginTabItem(tabName(tab))) {
         gTab = tab;
         ImGui::EndTabItem();
@@ -559,6 +560,9 @@ void App::drawToolsPane() {
       break;
     case Tab::Plugins:
       drawPluginsSection(width);
+      break;
+    case Tab::Git:
+      drawGitSection(width);
       break;
   }
 

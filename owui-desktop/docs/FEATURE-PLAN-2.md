@@ -760,3 +760,26 @@ way: opening the table from inside the picker modal closed it at once (two root 
 - the picker now closes first; the table opens centred. Not done from the item's
 wording: nothing - the "pull metadata into picker tooltips; quant comparison table" is
 all there.
+
+2026-10-24 V (92 git pane): `src/git_pane.cpp`, a Tools > Git tab on the pinned project
+folder. Every git call runs through `native::runProcess` on a worker (`git -c
+color.ui=never ...`): `status --porcelain=v1 --branch` for the branch / upstream / ahead-
+behind and the file list (index and worktree states, untracked, renames), `add` / `reset`
+per file or for everything, `diff --cached` (or a file's working-tree diff; an untracked
+file is shown as all additions) rendered with the existing `diffview::render`, `commit
+-m`, `blame --date=short -w [-L range]`, and `log base..HEAD` + `diff base...HEAD` for
+the PR. Two model calls through `api_.completion` (non-streaming, think block and fence
+stripped): a commit message from the staged diff plus the last eight subjects (72-char
+imperative summary, short body), and a PR description (title, Summary, Changes, Testing)
+from the branch's commits; both land in editable boxes - nothing is committed or copied
+without a click. "Explain in chat" sends the shown diff as a prompt. The pane refreshes
+every 10 s while visible. Verified against a scratch server and a scratch repo (one
+commit, a modified and an untracked file): the list showed M src/app.py and ? src/cli.py;
+Stage all turned both ticks on and the diff view showed both files' hunks; Draft message
+produced "Update greeting format and add CLI to display arguments" with a two-line body;
+Commit made 823f9df and the tree read clean; blame on src/app.py attributed line 1 to the
+first commit and the rest to the new one; with base set to a branch at the old HEAD,
+Draft PR description produced a titled Markdown description with Summary / Changes /
+Testing and a Copy button appeared. Not exercised: Unstage, per-file toggles (the same
+`gitStage` with the other flag) and a commit failure (hooks, empty identity). Not done
+from the item's wording: nothing beyond push/pull, which are left to the terminal.

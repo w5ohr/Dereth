@@ -248,6 +248,12 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Git:** Tools ▸ Git shows the pinned project's repository - branch and
+  upstream, the status list with stage/unstage ticks, the staged or
+  per-file diff, a commit box whose message the model drafts from the staged
+  diff (edit, then Commit), "Explain in chat" for any diff, blame for a
+  file or line range, and a PR description drafted from the branch's
+  commits against a base branch, ready to copy.
 - **Model cards:** hover a model in the picker or the chat header's model
   chip for what Ollama knows about it - family, parameters, quantisation,
   size on disk, trained context, layers, bits per weight, capabilities,
