@@ -245,6 +245,16 @@ void App::drawSettingsPane() {
         native::unregisterCaptureHotkey();
       }
     }
+    bool redactScan = cfg.extra.value("redactScan", true);
+    if (ImGui::Checkbox("Check prompts for secrets and personal data before they are sent", &redactScan)) {
+      cfg.extra["redactScan"] = redactScan;
+      cfg.save();
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("API keys, tokens, private keys, passwords, card numbers, SSNs, IBANs, emails, phone\n"
+                        "numbers and IP addresses are shown for review and masked with placeholders; the\n"
+                        "real values stay on this Mac and the chat shows them.");
+    }
     bool captureOcr = cfg.extra.value("captureOcr", true);
     if (ImGui::Checkbox("Put the text found in a screenshot into the composer as well", &captureOcr)) {
       cfg.extra["captureOcr"] = captureOcr;

@@ -916,6 +916,7 @@ void App::sendMessage(const std::string& textIn) {
   // Plugins' before-send hooks see the final text (variables already filled).
   const std::string text = plugins::Host::instance().beforeSend(textIn, pluginSnapshot());
   if (core::trim(text).empty() && attachments.empty()) return;
+  if (!sendingRedacted_ && interceptRedaction(text)) return;
   if (!serverReachable && attachments.empty()) {
     offlineQueue.push_back(text);
     composer.clear();
@@ -1000,6 +1001,7 @@ void App::sendMessage(const std::string& textIn) {
       async::post([this, res, pending] {
         if (res.ok && res.data.contains("id")) {
           chat.id = res.data["id"];
+          adoptRedactionsForNewChat();
           store::putChat(res.data);
           refreshChats();
         } else {
@@ -1549,6 +1551,7 @@ void App::frame() {
     drawQuickAsk();
     drawContextInspector();
     drawPromptForm();
+    drawRedactionSheet();
     pluginsTick();
     drawCitationPopup();
     drawProjectFilesPopup();

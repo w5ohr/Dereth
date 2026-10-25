@@ -18,6 +18,7 @@
 #include "api/client.h"
 #include "core/pty.h"
 #include "core/promptvars.h"
+#include "core/redact.h"
 #include "core/settings.h"
 #include "core/socketio.h"
 #include "imgui.h"
@@ -434,6 +435,28 @@ class App {
   void drawPluginsSection(float width);
   int pluginWatchToken = -1;
   double pluginReloadAt = 0.0;
+
+  // --- redaction (redaction.cpp) --------------------------------------------
+  // Secrets and personal data in an outgoing prompt are reviewed and masked
+  // with placeholders; the mapping stays local so the chat reads normally.
+  struct RedactionSheet {
+    bool open = false;
+    bool justOpened = false;
+    bool reveal = false;
+    bool enterArmed = false;      // Enter counts only once it was seen released (the send key opened us)
+    std::string text;
+    std::vector<redact::Finding> findings;
+    std::vector<bool> mask;
+  } redactionSheet;
+  bool interceptRedaction(const std::string& text);   // true when it took the send over
+  void sendRedacted(const std::string& text, const std::vector<redact::Finding>& findings,
+                    const std::vector<bool>& mask);
+  void drawRedactionSheet();
+  std::string unredact(const std::string& text) const;   // display form of a message
+  void adoptRedactionsForNewChat();
+  std::string redactionPolicy(int kind) const;          // "ask" | "always" | "never"
+  void setRedactionPolicy(int kind, const std::string& policy);
+  bool sendingRedacted_ = false;
 
   // --- prompt variables (prompt_vars.cpp) -----------------------------------
   // {{clipboard}}, {{selection}}, {{date}}, {{file:path}}, {{input:Label}}...

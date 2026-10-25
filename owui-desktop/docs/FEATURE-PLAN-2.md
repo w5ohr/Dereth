@@ -595,3 +595,31 @@ word_count", Allow once ran it ({"words": 9}) and the answer said 9 words, all s
 Not delivered from the item's wording: plugin-defined panes (an ImGui pane from JS has
 no good shape yet; openArtifact gives plugins an HTML surface instead) and markdown
 renderers beyond code blocks.
+
+2026-10-24 IX (133 redaction filter): `src/core/redact.{h,cpp}` (app-free scanner:
+vendor key shapes for AWS / OpenAI / Anthropic / Google / Stripe / GitHub / Slack /
+Hugging Face / JWT / bearer, generic `api_key=` / `token:` / `password=` assignments,
+PEM private-key blocks, Luhn-checked card numbers, SSNs, IBANs, emails, phones, IPs;
+overlaps resolved longest / most specific first; `apply` gives stable placeholders per
+value and continues numbering across a chat; `restore` for display) and
+`src/redaction.cpp` (the intercept in `sendMessage` after prompt variables and plugin
+hooks, the "Before this leaves your Mac" modal with mask checkboxes, kind labels
+coloured secret / personal, previews or full values, per-kind next-time policy ask /
+always / never, Send masked / Send as is / Cancel; the placeholder map in
+support/redactions.json keyed by chat id, carried from "new" to the real id once the
+chat exists; `unredact` applied to the markdown body, raw text and Copy). All-"always"
+findings mask without a sheet (toast "Masked N items before sending - shown unmasked
+here only"); "never" kinds are not findings. Settings toggle extra["redactScan"].
+`--redacttest` runs 19 offline checks. Fixed on the way: std::regex has no lookbehind
+(the first rules aborted the whole scan with regex_error - the crash report the user
+pasted); the card rule swallowed a trailing space; the Enter that sent the prompt was
+still down when the sheet opened and confirmed it at once (Enter now counts only after
+it was seen released). Verified against a scratch server with qwen3:8b: a prompt with
+a fake OpenAI key and an email was sent (both kinds on "ask" the first run went through
+because of the Enter bug - masked anyway), the server stored "My key is [API_KEY_1] ...
+[EMAIL_1]" and redactions.json held the values under the chat id; the reply "Your email
+[EMAIL_1] has been received" rendered as "Your email ann.lee@corp.io ..." both live and
+after a relaunch; a second prompt with a phone, a card and an IP opened the sheet with
+three rows, and Send masked produced placeholders on the server. Not covered:
+attachments and pasted files are not scanned (only the prompt text), and a secret the
+model needs verbatim (an API key for a tool) has to be sent "as is".

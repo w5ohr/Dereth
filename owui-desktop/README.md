@@ -248,6 +248,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   artifact in the chat, shows the page's console output and errors, has an
   editor with Apply/Revert, and can copy, save or open the artifact in your
   browser. (Mermaid loads its renderer from a CDN, so it needs the network.)
+- **Redaction:** every prompt is checked before it leaves the Mac for API
+  keys, tokens, private keys, passwords, card numbers (Luhn-checked), SSNs,
+  IBANs, emails, phone numbers and IP addresses. A review sheet lists the
+  findings with previews; masked items go to the model as placeholders
+  (`[EMAIL_1]`) and the mapping stays in a local file, so the chat - and the
+  reply - read with the real values here while the server never sees them.
+  Per kind: ask, always mask, or never. Settings ▸ "Check prompts for
+  secrets and personal data". `Open WebUI --redacttest` runs the scanner's
+  offline checks.
 - **Plugins:** JavaScript files in `~/Library/Application Support/Open WebUI
   Desktop/plugins/` run in JavaScriptCore and register palette commands,
   tools the model can call (next to MCP tools, same approvals), before-send

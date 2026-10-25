@@ -499,7 +499,7 @@ void App::drawChatPane() {
       if (message.showRaw) {
         theme::pushMono();
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + contentWidth);
-        ImGui::TextUnformatted(message.content.c_str());
+        ImGui::TextUnformatted(unredact(message.content).c_str());
         ImGui::PopTextWrapPos();
         theme::pop();
       } else if (message.editing) {
@@ -562,10 +562,10 @@ void App::drawChatPane() {
           drawCodeBlockActions(code, language);
         };
         options.onApplyDiff = [this](const std::string& diff) { applyCodeBlockToFile(diff); };
-        md::render("body", message.content, options);
+        md::render("body", unredact(message.content), options);
       } else {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + contentWidth);
-        ImGui::TextUnformatted(message.content.c_str());
+        ImGui::TextUnformatted(unredact(message.content).c_str());
         ImGui::PopTextWrapPos();
       }
 
@@ -649,7 +649,7 @@ void App::drawChatPane() {
       if (!message.streaming) {
         ImGui::Dummy(ImVec2(0, 2));
         if (icons::button("copy", icons::Icon::Copy, "Copy")) {
-          platform::setClipboardText(message.content);
+          platform::setClipboardText(unredact(message.content));
           widgets::toast(widgets::ToastLevel::Success, "Copied");
         }
         ImGui::SameLine();
