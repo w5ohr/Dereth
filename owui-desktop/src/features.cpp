@@ -358,6 +358,7 @@ void App::drawPalette() {
   add("Save the current layout as...", "settings", [this] { pane = Pane::Settings; });
   add("Image gallery (generated images, prompts, favourites)", "images", [this] { pane = Pane::Images; });
   add("Knowledge graph (entities across memories, notes and knowledge bases)", "tools", [this] { openGraphTab(); });
+  add("Sketch input (draw and attach to the message)", "chat", [this] { pane = Pane::Chat; openSketch(); });
   add("Toggle conversation tree", "command", [this] { showTree = !showTree; });
   add("New private chat", "command", [this] { newPrivateChat(); });
   add("Propose memories from this reply", "command", [this] {

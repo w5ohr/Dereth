@@ -1964,3 +1964,29 @@ truncated memory titles ("Harbour Ferr", "Winch"), and the palette's tab switch 
 overridden by the old tab in the same frame. Not covered: dragging a node and panning
 beyond code review, Export JSON, Find, the option sliders live (self-test only), and
 very large graphs (the layout is O(n^2) per step).
+
+2026-10-25 120 (sketch input): `src/core/sketch.*` (Doc of Strokes - points, colour,
+width, eraser - with a redo stack; `add` clears redo, `undo` / `redo` move whole strokes,
+`clear`, `empty` ignores eraser-only docs; `rasterize` at a scale paints each stroke
+through a per-stroke max-coverage mask with anti-aliased capsule segments and blends it
+once, erasers paint the background; `trim` to the drawn bounds plus a margin (whole
+image when blank); `encodePng` - 8-bit RGBA, filter 0, zlib level 6, CRCs via zlib;
+`summary`; JSON round-trip). `src/sketch_pane.cpp`: a "Sketch" modal - swatches, Pen /
+Eraser, width 1-32, Undo / Redo / Clear with Cmd+Z / Cmd+Shift+Z, the canvas fitted to
+the window with live round-cap strokes and a brush outline, an optional question field,
+"Trim to the drawing", and Attach, which rasterises at 1.5x, trims with a 36 px margin,
+encodes and calls `attachBytes("sketch.png", "image/png", ...)`, fills the composer
+with the question when it is empty and toasts the size. A pencil button sits after the
+capture button in the composer; palette entry. `--sketchtest` runs 10 offline checks,
+the PNG decoded back through stb_image to identical pixels. Verified on a scratch home
+against Open WebUI 0.12.3: the pencil opened the canvas; nine real mouse drags drew a
+house (black outline and roof, a red door), the counter read "9 strokes, 99 points";
+Cmd+Z took it to 8 and Cmd+Shift+Z back to 9; Attach put a 444x535, 6.8 KB thumbnail
+above the composer with the question filled in; the sent message showed the image; the
+Traffic tab's copied request body carried an image_url part whose base64 decoded to a
+valid 444x535 PNG of the house. One defect fixed on the way: edges darkened where
+consecutive segments of a stroke overlapped (visible beading on the house's walls) -
+the per-stroke coverage mask replaced per-segment blending, a self-test check pins it,
+and a second real run (a triangle, sent and decoded from the wire) came out clean. Not
+covered: a vision model's answer (none is installed locally; qwen3:8b is text-only), the
+eraser and width slider beyond the self-test, and pressure or smoothing (none).

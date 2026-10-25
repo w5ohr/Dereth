@@ -1714,6 +1714,7 @@ void App::frame() {
     drawQuickAsk();
     drawContextInspector();
     drawPlayground();
+    drawSketchWindow();
     drawFileEditor();
     drawCheatSheet();
     drawWhatsNew();

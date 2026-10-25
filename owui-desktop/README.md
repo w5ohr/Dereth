@@ -775,6 +775,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   the minimum mentions and the entity cap, switch the entity-entity links
   off, Shake to relayout, Export JSON. `Open WebUI --graphtest` covers the
   extraction, the graph build, the options and the layout.
+- **Sketch input:** the pencil in the composer (or "Sketch input" in the
+  palette) opens a drawing canvas - seven colours, pen and eraser, a width
+  slider, Undo / Redo (Cmd+Z / Cmd+Shift+Z), Clear and a stroke count. Attach
+  renders the drawing at 1.5x with anti-aliased round strokes, trims it to
+  what was drawn (switchable), encodes a PNG and adds it to the message as an
+  image, optionally with a question; pick a vision model to send it to. The
+  drawing stays in the window until cleared. `Open WebUI --sketchtest`
+  covers the strokes, undo / redo, the rasteriser (including joints), the
+  trim and the PNG encoder, decoded back with stb_image.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -848,6 +848,12 @@ class App {
   void applyAccessibility();           // reduced motion, font override, scale, then the theme
   void drawAccessibilitySection(float width);
 
+  // --- sketch input (sketch_pane.cpp) ---------------------------------------
+  bool showSketch = false;
+  void openSketch();
+  bool attachSketch();   // rasterise, encode a PNG, attach it to the composer
+  void drawSketchWindow();
+
   // --- knowledge graph (graph_pane.cpp) -------------------------------------
   void loadKnowledgeGraph();
   void drawGraphSection(float width);

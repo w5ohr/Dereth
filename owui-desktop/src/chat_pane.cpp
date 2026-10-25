@@ -1170,6 +1170,8 @@ void App::drawChatPane() {
       captureScreenToChat(true);
     }
     ImGui::SameLine();
+    if (icons::button("sketch", icons::Icon::Pencil, "Sketch: draw a diagram, equation or mock-up and attach it as an image")) openSketch();
+    ImGui::SameLine();
     if (icons::button("fanout", icons::Icon::Branch,
                       fanoutModels.size() >= 2
                           ? ("Fan out to " + std::to_string(fanoutModels.size()) + " models").c_str()

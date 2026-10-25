@@ -524,6 +524,7 @@ int runFileEditorSelfTest();
 int runLayoutSelfTest();
 int runImageMetaSelfTest();
 int runGraphSelfTest();
+int runSketchSelfTest();
 
 int main(int argc, const char* argv[]) {
   for (int i = 1; i < argc; ++i) {
@@ -581,6 +582,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--layouttest") return runLayoutSelfTest();
     if (std::string(argv[i]) == "--imagemetatest") return runImageMetaSelfTest();
     if (std::string(argv[i]) == "--graphtest") return runGraphSelfTest();
+    if (std::string(argv[i]) == "--sketchtest") return runSketchSelfTest();
   }
   // A chat in its own window is another instance started with these flags.
   for (int i = 1; i < argc; ++i) {
