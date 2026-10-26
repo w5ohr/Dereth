@@ -17,6 +17,7 @@
 #include "imgui_stdlib.h"
 #include "native.h"
 #include "platform.h"
+#include "ui/a11y_imgui.h"
 #include "ui/icons.h"
 #include "ui/images.h"
 #include "ui/markdown.h"
@@ -49,6 +50,13 @@ const NavItem kNav[] = {
     {Pane::Tools, icons::Icon::Wrench, "Tools", false},
     {Pane::Settings, icons::Icon::Gear, "Settings", false},
 };
+
+const char* paneLabel(Pane pane) {
+  for (const NavItem& item : kNav) {
+    if (item.pane == pane) return item.label;
+  }
+  return "";
+}
 
 }  // namespace
 
@@ -277,6 +285,14 @@ App& App::instance() {
 
 void App::init() {
   core::Settings& cfg = settings();
+  // VoiceOver's cursor on a message scrolls to it and makes it the focused one.
+  a11y::ui::setFocusHandler([this](const std::string& tag) {
+    if (tag.rfind("msg:", 0) != 0) return;
+    const std::string id = tag.substr(4);
+    if (!chat.messages.count(id)) return;
+    focusedMessageId = id;
+    pendingScrollTo = id;
+  });
   i18n::setLanguage(cfg.extra.value("language", std::string()));
   i18n::setFormatsFromLanguage(cfg.extra.value("formatsFromLanguage", false));
   // OWUI_SERVER / OWUI_TOKEN let you point the app at another instance without
@@ -1363,6 +1379,10 @@ void App::afterCompletion(const std::string& assistantId) {
   }
   const Message& message = it->second;
   if (message.error.empty()) recordUsage(message);
+  if (message.error.empty()) {
+    a11y::ui::announce(a11y::replyAnnouncement(message.modelName.empty() ? message.model : message.modelName,
+                                               md::toPlainText(message.content)));
+  }
 
   if (!message.error.empty()) {
     widgets::toastError(message.error);
@@ -1666,6 +1686,7 @@ void App::frame() {
     drawLogin();
   } else {
     const float railWidth = 56.0f;
+    a11y::ui::Group railGroup("region:rail", a11y::Role::Group, i18n::tr("Navigation"));
     ImGui::BeginChild("##rail", ImVec2(railWidth, 0), ImGuiChildFlags_None);
     {
       ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1682,6 +1703,8 @@ void App::frame() {
         ImGui::SetCursorPosX((railWidth - size) * 0.5f);
         pos = ImGui::GetCursorScreenPos();
         if (ImGui::InvisibleButton("##nav", ImVec2(size, size))) pane = item.pane;
+        a11y::ui::nameLastItem(i18n::tr(item.label));
+        a11y::ui::markLastItem(active);
         const bool hovered = ImGui::IsItemHovered();
         if (active || hovered) {
           dl->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size),
@@ -1695,13 +1718,17 @@ void App::frame() {
       }
       ImGui::EndChild();
     }
+    railGroup.close(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
     ImGui::SameLine(0, 0);
 
     if (pane == Pane::Chat && sidebarVisible) {
+      a11y::ui::Group sidebarGroup("region:sidebar", a11y::Role::Group, i18n::tr("Chat list"));
       drawSidebar(settings().sidebarWidth);
+      sidebarGroup.close(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
       ImGui::SameLine(0, 0);
     }
 
+    a11y::ui::Group contentGroup("region:main", a11y::Role::Group, i18n::tr(pane == Pane::Chat ? "Conversation" : paneLabel(pane)));
     ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_None);
     switch (pane) {
       case Pane::Chat: drawChatPane(); break;
@@ -1718,6 +1745,7 @@ void App::frame() {
       case Pane::Tools: drawToolsPane(); break;
     }
     ImGui::EndChild();
+    contentGroup.close(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
   }
 
   ImGui::End();
@@ -1785,6 +1813,60 @@ void App::handleShortcuts() {
   }
   if (shortcutPressed("chat.refresh") && pane == Pane::Chat) refreshChats(false);
   if (shortcutPressed("chat.stop")) stopAllStreams();
+  if (shortcutPressed("view.focusComposer")) focusRegion(a11y::Region::Composer);
+  if (shortcutPressed("view.nextRegion")) cycleRegion(1);
+  if (shortcutPressed("view.prevRegion")) cycleRegion(-1);
+}
+
+// Keyboard regions (#142): the rail, the chat list, the conversation or pane,
+// and the composer, in that order. Each move says where it landed.
+std::vector<a11y::Region> App::availableRegions() const {
+  std::vector<a11y::Region> out{a11y::Region::Rail};
+  if (pane == Pane::Chat && sidebarVisible) out.push_back(a11y::Region::Sidebar);
+  out.push_back(a11y::Region::Main);
+  if (pane == Pane::Chat) out.push_back(a11y::Region::Composer);
+  return out;
+}
+
+void App::cycleRegion(int direction) {
+  focusRegion(a11y::nextRegion(currentRegion_, availableRegions(), direction));
+}
+
+void App::focusRegion(a11y::Region region) {
+  if (region == a11y::Region::None) return;
+  currentRegion_ = region;
+  std::string spoken = i18n::tr(a11y::regionName(region));
+  switch (region) {
+    case a11y::Region::Composer:
+      pane = Pane::Chat;
+      focusComposer = true;
+      break;
+    case a11y::Region::Main:
+      if (pane == Pane::Chat) {
+        // The conversation is walked a message at a time (arrows, Option+arrows).
+        const std::vector<std::string> path = chat.branch();
+        native::composerHandOff();
+        // ImGui's own nav cursor (left on the last region's button) would
+        // otherwise keep the keyboard and VoiceOver's focus.
+        ImGui::FocusWindow(nullptr);
+        ImGui::SetNavCursorVisible(false);
+        if (!path.empty()) {
+          if (std::find(path.begin(), path.end(), focusedMessageId) == path.end()) focusedMessageId = path.back();
+          pendingScrollTo = focusedMessageId;
+        }
+        break;
+      }
+      [[fallthrough]];
+    case a11y::Region::Rail:
+    case a11y::Region::Sidebar: {
+      native::composerHandOff();
+      const char* key = region == a11y::Region::Rail ? "region:rail" : region == a11y::Region::Sidebar ? "region:sidebar" : "region:main";
+      if (!a11y::ui::focusFirstIn(key)) spoken += ", " + std::string(i18n::tr("nothing to focus"));
+      break;
+    }
+    case a11y::Region::None: break;
+  }
+  a11y::ui::announce(spoken);
 }
 
 void App::shortcutsApplyMenusOnce() {

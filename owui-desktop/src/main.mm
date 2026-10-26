@@ -15,6 +15,8 @@
 #include "imgui.h"
 #include "imgui_impl_metal.h"
 #include "imgui_impl_osx.h"
+#include "ui/a11y_bridge.h"
+#include "ui/a11y_imgui.h"
 #include "ui/images.h"
 #include "ui/theme.h"
 
@@ -39,6 +41,7 @@ static std::string gIniPath;
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
+  a11y::ui::install(ImGui::GetCurrentContext());   // VoiceOver reads the widgets ImGui reports
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -60,7 +63,7 @@ static std::string gIniPath;
 }
 
 - (void)loadView {
-  self.view = [[MTKView alloc] initWithFrame:CGRectMake(0, 0, 1380, 900)];
+  self.view = [[OWUIMetalView alloc] initWithFrame:CGRectMake(0, 0, 1380, 900)];
 }
 
 static MTKView* gMainView = nil;
@@ -129,7 +132,8 @@ void setPreferredFrameRate(int fps) {
   // which stop arriving while a native subview (the composer, the artifact
   // view) is first responder; the first click after typing then lands on a
   // stale position. Refreshing from the window every frame keeps it right.
-  if (view.window.keyWindow) {
+  // (Not while VoiceOver's press is being played in at a widget's centre.)
+  if (view.window.keyWindow && !a11y::ui::pressInFlight()) {
     const NSPoint local = [view convertPoint:view.window.mouseLocationOutsideOfEventStream fromView:nil];
     const float x = static_cast<float>(local.x);
     const float y = static_cast<float>(view.bounds.size.height - local.y);
@@ -144,9 +148,13 @@ void setPreferredFrameRate(int fps) {
   }
   ImGui_ImplMetal_NewFrame(descriptor);
   ImGui_ImplOSX_NewFrame(view);
+  a11y::ui::pumpInput(io);
   ImGui::NewFrame();
+  a11y::ui::beginFrame();
 
   app::App::instance().frame();
+  a11y::ui::endFrame();
+  a11y::bridge::frameDone((__bridge void*)view);
 
   ImGui::Render();
   ImVec4 clear = theme::toVec4(theme::palette().bg);
@@ -536,6 +544,7 @@ int runTranscribeSelfTest();
 int runI18nSelfTest();
 int runImgEditSelfTest();
 int runFadeSelfTest();
+int runVoiceOverSelfTest();
 int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
@@ -604,6 +613,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--i18ntest") return runI18nSelfTest();
     if (std::string(argv[i]) == "--imgedittest") return runImgEditSelfTest();
     if (std::string(argv[i]) == "--fadetest") return runFadeSelfTest();
+    if (std::string(argv[i]) == "--voiceovertest") return runVoiceOverSelfTest();
     if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.

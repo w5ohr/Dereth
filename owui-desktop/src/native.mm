@@ -687,6 +687,20 @@ NSColor* colorFromImU32(unsigned c) {
   [self.window makeFirstResponder:host];
 }
 
+// VoiceOver: a named text area in the app's language (the placeholder alone
+// is not read as a name).
+- (NSString*)accessibilityLabel {
+  return [NSString stringWithUTF8String:i18n::tr("Message")];
+}
+
+- (BOOL)isAccessibilityEnabled {
+  return YES;
+}
+
+- (NSString*)accessibilityPlaceholderValue {
+  return [NSString stringWithUTF8String:i18n::tr("Send a message...")];
+}
+
 - (void)keyDown:(NSEvent*)event {
   const NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
   const BOOL isReturn = event.keyCode == 36 || event.keyCode == 76;
@@ -860,6 +874,10 @@ bool composerFocus() {
 
 bool composerIsFocused() {
   return gComposerView && gComposerView.window && gComposerView.window.firstResponder == gComposerView;
+}
+
+void composerHandOff() {
+  if (composerIsFocused()) [gComposerView handOffToImGui];
 }
 
 float composerContentHeight() {

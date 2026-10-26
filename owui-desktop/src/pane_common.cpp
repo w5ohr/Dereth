@@ -1,6 +1,7 @@
 #include "core/i18n.h"
 #include "pane_common.h"
 
+#include "ui/a11y_imgui.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
 
@@ -22,6 +23,7 @@ void paneHeader(const char* title, const char* subtitle,
   theme::pushScaled(1.2f);
   theme::pushBold();
   ImGui::TextUnformatted(title);
+  a11y::ui::headingItem(title);
   theme::pop();
   ImGui::PopFont();
   if (subtitle) widgets::dimText("%s", subtitle);

@@ -13,6 +13,7 @@
 
 #include "core/accessibility.h"
 #include "core/crashreport.h"
+#include "core/a11y.h"
 #include "core/fade.h"
 #include "core/imagemeta.h"
 #include "core/layouts.h"
@@ -1102,6 +1103,14 @@ class App {
   bool showPins = false;
   bool showTree = false;                 // conversation tree column
   std::string focusedMessageId;
+  // Keyboard regions (accessibility, #142).
+  a11y::Region currentRegion_ = a11y::Region::None;
+  std::vector<a11y::Region> availableRegions() const;
+  void cycleRegion(int direction);
+  void focusRegion(a11y::Region region);
+  std::string a11yMessageLabel(const Message& message) const;
+  const std::string& a11yMessageText(const std::string& id, const Message& message);
+  std::unordered_map<std::string, std::pair<size_t, std::string>> a11yTextCache_;   // id -> (content size, plain text)
   std::map<std::string, MessageTiming> timings;
   bool voiceMode = false;
   double voiceSilenceSince = 0.0;

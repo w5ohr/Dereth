@@ -9,6 +9,7 @@
 #include "core/common.h"
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
+#include "ui/a11y_imgui.h"
 #include "ui/icons.h"
 #include "ui/theme.h"
 
@@ -61,6 +62,7 @@ void toast(ToastLevel level, const std::string& text) {
   std::lock_guard<std::mutex> lock(gToastMutex);
   gToasts.push_back({level, text, core::nowMillis()});
   if (gToasts.size() > 6) gToasts.pop_front();
+  a11y::ui::announce(level == ToastLevel::Error ? "Error: " + text : text);   // VoiceOver reads toasts aloud
 }
 
 void toastInfo(const std::string& text) { toast(ToastLevel::Info, text); }
@@ -136,6 +138,7 @@ void loadingRow(const char* text) {
   ImGui::SameLine();
   ImGui::AlignTextToFramePadding();
   ImGui::TextColored(theme::toVec4(theme::palette().textDim), "%s", text);
+  a11y::ui::textItem(text);
 }
 
 void pill(const std::string& text, ImU32 bg, ImU32 fg) {
@@ -153,6 +156,7 @@ void sectionHeader(const char* text) {
   theme::pushBold();
   ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(theme::palette().textFaint));
   ImGui::TextUnformatted(i18n::tr(text));
+  a11y::ui::headingItem(i18n::tr(text));
   ImGui::PopStyleColor();
   theme::pop();
   ImGui::Spacing();
@@ -161,10 +165,18 @@ void sectionHeader(const char* text) {
 void dimText(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
+  va_list spoken;
+  va_copy(spoken, args);
   ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(theme::palette().textDim));
   ImGui::TextV(fmt, args);
   ImGui::PopStyleColor();
   va_end(args);
+  if (!ImGui::GetCurrentWindow()->SkipItems) {
+    char buf[1024];
+    vsnprintf(buf, sizeof buf, fmt, spoken);
+    a11y::ui::textItem(buf);   // VoiceOver reads status lines too
+  }
+  va_end(spoken);
 }
 
 void centeredText(const char* text) {
@@ -172,12 +184,14 @@ void centeredText(const char* text) {
   const float textWidth = ImGui::CalcTextSize(text).x;
   ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (width - textWidth) * 0.5f);
   ImGui::TextUnformatted(text);
+  a11y::ui::textItem(text);
 }
 
 bool linkText(const char* text) {
   ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(theme::palette().accent));
   ImGui::TextUnformatted(text);
   ImGui::PopStyleColor();
+  a11y::ui::linkItem(text);
   const bool hovered = ImGui::IsItemHovered();
   if (hovered) {
     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -228,6 +242,7 @@ bool searchField(const char* id, std::string* value, const char* placeholder, fl
   ImGui::SetCursorScreenPos(ImVec2(pos.x + 26.0f, pos.y));
   ImGui::SetNextItemWidth(w - 26.0f);
   bool changed = ImGui::InputTextWithHint("##field", placeholder, value);
+  a11y::ui::nameLastItem(placeholder ? placeholder : "Search");
   ImDrawList* dl = ImGui::GetWindowDrawList();
   dl->AddRect(pos, ImVec2(pos.x + w, pos.y + ImGui::GetFrameHeight()), theme::palette().border,
               8.0f, 1.0f);

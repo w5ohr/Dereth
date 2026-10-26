@@ -1,8 +1,10 @@
 #include "ui/icons.h"
 
 #include <cmath>
+#include <string>
 
 #include "imgui_internal.h"
+#include "ui/a11y_imgui.h"
 #include "ui/theme.h"
 
 namespace icons {
@@ -292,12 +294,27 @@ void draw(ImDrawList* dl, Icon icon, ImVec2 c, float s, ImU32 col, float t) {
   }
 }
 
+// A spoken fallback for icon buttons drawn without a tooltip.
+static std::string iconName(Icon icon) {
+  static const char* kNames[] = {
+      "Add", "Send", "Stop", "Copy", "Delete", "Edit", "Refresh", "More", "Open", "Search",
+      "Attach", "Microphone", "Image", "Pin", "Star", "Settings", "User", "Folder", "Chat", "Archive", "Share",
+      "Good response", "Bad response", "Web", "Code", "Library", "Sparkle", "Done", "Close", "Menu", "Download",
+      "Read aloud", "Branch", "Info", "Warning", "Play", "Note", "Channel", "Tools", "Reasoning", "Layers", "Plugins", "Camera", "Tree", "Private",
+  };
+  const size_t index = static_cast<size_t>(icon);
+  return index < sizeof(kNames) / sizeof(kNames[0]) ? kNames[index] : "Button";
+}
+
 bool button(const char* id, Icon icon, const char* tooltip, float size, ImU32 color) {
   ImGuiStyle& style = ImGui::GetStyle();
   const float iconSize = size > 0.0f ? size : ImGui::GetFontSize();
   const ImVec2 box(iconSize + style.FramePadding.x * 1.4f, iconSize + style.FramePadding.y * 1.4f);
   const ImVec2 pos = ImGui::GetCursorScreenPos();
   bool clicked = ImGui::InvisibleButton(id, box);
+  // VoiceOver: an icon-only button's ID ("togglesidebar") is no name; the
+  // tooltip is, or failing that what the icon shows.
+  a11y::ui::nameLastItem(tooltip && *tooltip ? std::string(tooltip) : iconName(icon), true);
   const bool hovered = ImGui::IsItemHovered();
   ImDrawList* dl = ImGui::GetWindowDrawList();
   if (hovered) {

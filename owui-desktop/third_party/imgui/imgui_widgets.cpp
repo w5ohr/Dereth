@@ -1981,6 +1981,11 @@ bool ImGui::BeginCombo(const char* label, const char* preview_value, ImGuiComboF
         OpenPopupEx(popup_id, ImGuiPopupFlags_None);
         popup_open = true;
     }
+#ifdef IMGUI_ENABLE_TEST_ENGINE
+    // owui-desktop patch (#142): combos report their label and current value
+    // to the accessibility tree, like the other widgets' ITEM_INFO calls.
+    ImGuiTestEngineHook_ComboInfo(&g, id, label, preview_value, popup_open);
+#endif
 
     // Render shape
     const ImU32 frame_col = GetColorU32(hovered ? ImGuiCol_FrameBgHovered : ImGuiCol_FrameBg);

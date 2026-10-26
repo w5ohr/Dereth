@@ -909,6 +909,19 @@ Things a browser tab can't do, plus the workflow features built on top:
   the per-chat scroll position were already there. `Open WebUI --fadetest`
   covers the timeline: arrivals, the smoothstep curve, settling, regenerating
   and forgetting.
+- **VoiceOver:** the window now has a real accessibility tree. Every button,
+  check box, text field, tab, menu item, disclosure and pop-up the UI draws is
+  an element with its name, state and position, and icon-only buttons use
+  their tooltip as their name. The window is split into regions
+  (Navigation, Chat list, Conversation or the open pane, the message field).
+  Each message is a group named by who wrote it and when, holding its plain
+  text, so VoiceOver can read a whole conversation, scrolled-away messages
+  included. Pressing an element clicks it. A modal hides the rest of the
+  window. Finished replies and toasts are announced. Keyboard: Cmd+Alt+] and
+  Cmd+Alt+[ move between regions and say where you landed, Cmd+L returns to
+  the message field, and arrow keys walk the messages, which VoiceOver
+  follows. `Open WebUI --voiceovertest` covers the tree, the ImGui hooks and
+  the Cocoa elements.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

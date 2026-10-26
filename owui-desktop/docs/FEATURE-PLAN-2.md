@@ -2442,3 +2442,64 @@ opaque; two earlier replies also ended fully opaque. Not covered in the GUI: the
 and Reduced motion on (both just skip the timeline), and table cells fading (they share the
 paragraph path, so they should). Code blocks, table header rows and right-to-left paragraphs
 draw through other paths and appear without fading, by design for now.
+
+2026-10-25 142 (accessibility: VoiceOver and keyboard): ImGui keeps no widgets, so the tree
+is rebuilt each frame. `IMGUI_ENABLE_TEST_ENGINE` turns on ImGui's item hooks;
+`src/ui/a11y_imgui.cpp` implements them (ItemAdd gives the rectangle and flags, ItemInfo
+the label and the checkable / openable / inputable state; windows registering themselves
+are skipped; tab items report before their rectangle, so their label is held until it
+arrives) and feeds `core/a11y`'s Builder. Panes add what ImGui does not report: headings
+(`sectionHeader`, `paneHeader`), status text (`dimText`, `loadingRow`, `centeredText`),
+links, region groups (rail, chat list, conversation or pane), and one group per message
+labelled "author, when[, pinned][, writing]" holding its plain text (`md::toPlainText`,
+cached per message), also for messages the virtualised transcript skips. Names come from
+the tooltip for `icons::button` (replacing its ID), and explicitly for the rail, sidebar
+and private-chat rows, starters and follow-up chips. Node keys are ImGui IDs or hashes of
+a pane key, so elements are stable across frames. A modal leaves only a Dialog subtree.
+One vendored change: `BeginCombo` gained an ITEM_INFO-style call (marked "owui-desktop
+patch") so its 33 uses read as pop-up buttons with their current value.
+`src/ui/a11y_bridge.mm`: `OWUIMetalView` (the Metal view's new class) returns the roots
+plus the native subviews as children, hit-tests, and reports the focused node;
+`OWUIAXElement`s look their node up by key on each call (roles: button, check box, tab
+radio button, pop-up, disclosure, text field, static text, AXHeading, groups with
+"message" / "dialog" role descriptions). Press plays a click into ImGui over three frames
+(pointer, down, up); a text field first takes the keyboard from the native composer.
+Notifications: layout changed (structure hash, at most twice a second), focused element
+changed, and announcements (finished replies "qwen3:8b replied: ...", every toast). The
+costlier nodes are built only while an assistive app has asked within two minutes,
+VoiceOver is on, or `OWUI_A11Y_DEBUG` is set. That variable makes the app write the tree
+(walked through the public NSAccessibility methods from the window) and its announcements
+to a folder, and run "press / focus <label>" and "focused" commands from it. It is a test
+hook, so a reader process needs no Accessibility permission. The composer is a named text
+area ("Message"). Keyboard audit: ImGui keyboard nav was already on, and the transcript
+already walked with arrows and letter keys. Added View > Next / Previous Region
+(Cmd+Alt+] / Cmd+Alt+[) and Focus the message field (Cmd+L), all rebindable; moving to the
+conversation clears ImGui's nav cursor so the focused message is what VoiceOver gets.
+`--voiceovertest` runs 36 checks: cleanLabel, groups and frame union, stable duplicate
+keys, hit test, structure hash, modal filtering, labels and announcement cut, region
+cycling; then a headless ImGui context (hooks on; button, check box, named icon button,
+text field, tree node, tabs, combo, heading, a scope-closed group, a press played in as
+exactly one click, focusFirstIn landing on the group's first control, a modal); then an
+offscreen window with the real view (roles, values, subroles, parents, screen frames,
+hit test, element reuse across frames, accessibilityPerformPress clicking the ImGui
+button, the window dump, pressLabel, announcements). Two bugs were found by it: the dump
+crashed on a title-bar proxy that does not implement the method-based protocol, and tab
+items were missing. Verified in the GUI against a scratch Open WebUI with
+`OWUI_A11Y_DEBUG`. The tree showed the rail as 12 tabs with Chats selected, the named
+chat-list rows, and the 14 header icon buttons named by their tooltips. A sent prompt
+announced "qwen3:8b replied: Bonjour Hola Hallo"; both messages were groups with their
+text and buttons. "press Language Greetings" opened that chat and "press Settings"
+switched panes, showing headings, check boxes with state and disabled where they are, and
+pop-ups with values. Cmd+Alt+] three times announced Navigation, Chat list, Conversation and
+focused Chats, New chat, then the latest reply. Up moved focus to the user message, with
+the accent bar on it on screen, and Cmd+L returned focus to the Message text area. Not
+covered: VoiceOver itself was not run, because turning it on is a system setting. Every
+check used the same public methods VoiceOver's server calls, in process. Sliders read as
+text fields without their value. Text-field values are only known while a field is being
+edited. Code blocks, tables and diff views inside messages are read only as the message's
+plain text. The cost per frame was not measured.
+
+2026-10-25 146 (follow-up chips): already built, logged here so the list reads right.
+After each answer the server's task model proposes follow-ups (`generateFollowUps`, on
+with Settings' auto follow-ups); they draw as chips under the reply, fill the composer,
+and are saved with the message (`followUps`). Since #142 they are named buttons for VoiceOver.

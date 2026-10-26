@@ -124,6 +124,9 @@ std::vector<Shortcut> defaults() {
   add("view.sidebar", "Toggle the sidebar", "View", "cmd+b", true);
   add("view.float", "Float on top", "View", "cmd+shift+t", true);
   add("view.reading", "Reading mode", "View", "cmd+shift+r", false);
+  add("view.focusComposer", "Focus the message field", "View", "cmd+l", false);
+  add("view.nextRegion", "Next region (rail, chat list, conversation, message field)", "View", "cmd+alt+]", false);
+  add("view.prevRegion", "Previous region", "View", "cmd+alt+[", false);
   add("view.layout1", "Layout 1 (Zen unless saved over)", "View", "cmd+alt+1", false);
   add("view.layout2", "Layout 2", "View", "cmd+alt+2", false);
   add("view.layout3", "Layout 3", "View", "cmd+alt+3", false);

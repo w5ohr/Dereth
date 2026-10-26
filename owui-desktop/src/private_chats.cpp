@@ -5,6 +5,7 @@
 // else - redaction, prompt variables, plugins, MCP tools, continue, the tree -
 // works as in any chat.
 #include "app.h"
+#include "core/i18n.h"
 
 #include <sys/stat.h>
 
@@ -16,6 +17,7 @@
 #include "core/keychain.h"
 #include "core/privatestore.h"
 #include "native.h"
+#include "ui/a11y_imgui.h"
 #include "ui/icons.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -281,6 +283,8 @@ void App::drawPrivateSection() {
     const float rowHeight = ImGui::GetTextLineHeight() + 12.0f;
     const float width = ImGui::GetContentRegionAvail().x;
     if (ImGui::InvisibleButton("##row", ImVec2(width, rowHeight))) openChat(summary.id);
+    a11y::ui::nameLastItem((summary.title.empty() ? std::string("New Chat") : summary.title) + ", " + i18n::tr("private"));
+    if (active) a11y::ui::helpLastItem(i18n::tr("Open now"));
     const bool hovered = ImGui::IsItemHovered();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     if (active || hovered) {

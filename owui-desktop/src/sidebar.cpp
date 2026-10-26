@@ -9,6 +9,7 @@
 #include "imgui_internal.h"
 #include "imgui_stdlib.h"
 #include "platform.h"
+#include "ui/a11y_imgui.h"
 #include "ui/icons.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -226,6 +227,8 @@ void App::drawSidebar(float width) {
     if (ImGui::InvisibleButton("##row", ImVec2(ImGui::GetContentRegionAvail().x, rowHeight))) {
       openChat(summary.id);
     }
+    a11y::ui::nameLastItem(summary.title.empty() ? std::string(i18n::tr("New Chat")) : summary.title);
+    if (active) a11y::ui::helpLastItem(i18n::tr("Open now"));
     const bool hovered = ImGui::IsItemHovered();
     ImDrawList* rowList = ImGui::GetWindowDrawList();
     if (active || hovered) {

@@ -11,6 +11,7 @@
 #include "imgui_stdlib.h"
 #include "native.h"
 #include "platform.h"
+#include "ui/a11y_imgui.h"
 #include "ui/icons.h"
 #include "ui/images.h"
 #include "ui/markdown.h"
@@ -48,6 +49,28 @@ std::string formatUsage(const Json& usage) {
 }
 
 }  // namespace
+
+// VoiceOver's name for a message: who wrote it, when, and whether it is
+// still being written.
+std::string App::a11yMessageLabel(const Message& message) const {
+  const bool isUser = message.role == "user";
+  const std::string author = isUser ? user_.value("name", std::string(i18n::tr("You")))
+                                    : (message.modelName.empty() ? std::string(i18n::tr("Assistant")) : message.modelName);
+  const std::string when = message.timestamp > 0 ? core::relativeTime(message.timestamp) : "";
+  return a11y::messageLabel(author, when, message.streaming, isPinned(message.id));
+}
+
+// The message as plain text (markdown syntax read aloud is noise), cached
+// until the content changes length.
+const std::string& App::a11yMessageText(const std::string& id, const Message& message) {
+  if (a11yTextCache_.size() > 4000) a11yTextCache_.clear();
+  auto& entry = a11yTextCache_[id];
+  if (entry.first != message.content.size() + 1) {
+    entry.first = message.content.size() + 1;
+    entry.second = md::toPlainText(unredact(message.content));
+  }
+  return entry.second;
+}
 
 void App::drawChatPane() {
   const auto& palette = theme::palette();
@@ -371,6 +394,7 @@ void App::drawChatPane() {
         if (ImGui::InvisibleButton("##starter", ImVec2(contentWidth, rowHeight))) {
           composer = shown;
         }
+        a11y::ui::nameLastItem(shown);
         const bool hovered = ImGui::IsItemHovered();
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(pos, ImVec2(pos.x + contentWidth, pos.y + rowHeight),
@@ -407,7 +431,15 @@ void App::drawChatPane() {
                             compareMode || (showChatSearch && !chatSearchQuery.empty());
       const float knownHeight = virtualOn && !mustDraw ? gHeights.known(messageId, contentWidth) : -1.0f;
       if (knownHeight >= 0.0f && virtualize::shouldSkip(ImGui::GetCursorScreenPos().y, knownHeight, viewTop, viewBottom, viewMargin)) {
+        const ImVec2 spacerAt = ImGui::GetCursorScreenPos();
         ImGui::Dummy(ImVec2(contentWidth, knownHeight));
+        if (a11y::ui::listening()) {   // not drawn, still read: VoiceOver can walk the whole conversation
+          a11y::ui::Group group("msg:" + messageId, a11y::Role::Group, a11yMessageLabel(message), "", "msg:" + messageId);
+          group.setFocused(focusedMessageId == messageId);
+          const ImVec2 spacerEnd(spacerAt.x + contentWidth, spacerAt.y + knownHeight);
+          a11y::ui::staticText("", a11yMessageText(messageId, message), spacerAt, spacerEnd, true);
+          group.close(spacerAt, spacerEnd);
+        }
         ImGui::Unindent(marginX);
         ImGui::PopID();
         ImGui::Dummy(ImVec2(0, 6));
@@ -474,6 +506,12 @@ void App::drawChatPane() {
           continue;
         }
       }
+
+      // VoiceOver: the message is a group named by who wrote it and when,
+      // holding its text and then its buttons. Closed at the end of the block
+      // (or by scope on an early continue).
+      a11y::ui::Group a11yGroup("msg:" + messageId, a11y::Role::Group, a11yMessageLabel(message), "", "msg:" + messageId);
+      a11yGroup.setFocused(focusedMessageId == messageId);
 
       // --- header line: who + when + branch switcher
       {
@@ -660,8 +698,13 @@ void App::drawChatPane() {
         } else if (!fadeTimelines_.empty()) {
           fadeTimelines_.erase(messageId);
         }
+        const ImVec2 bodyMin = ImGui::GetCursorScreenPos();
         if (confidenceShown(message.id) && !message.logprobs.empty()) drawTokenFlow(message, contentWidth);
         else md::render("body", unredact(message.content), options);
+        if (a11y::ui::listening()) {
+          a11y::ui::staticText("", a11yMessageText(messageId, message), bodyMin,
+                               ImVec2(bodyMin.x + contentWidth, ImGui::GetCursorScreenPos().y), true);
+        }
         if (timeline) {
           const double now = core::nowMillis() / 1000.0;
           timeline->record(now, md::lastRenderedChars());
@@ -671,6 +714,9 @@ void App::drawChatPane() {
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + contentWidth);
         ImGui::TextUnformatted(unredact(message.content).c_str());
         ImGui::PopTextWrapPos();
+        if (a11y::ui::listening()) {
+          a11y::ui::staticText("", a11yMessageText(messageId, message), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), true);
+        }
       }
 
       if (message.streaming && message.content.empty()) {
@@ -683,6 +729,7 @@ void App::drawChatPane() {
         ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.danger));
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + contentWidth);
         ImGui::TextUnformatted(message.error.c_str());
+        a11y::ui::textItem(std::string(i18n::tr("Error")) + ": " + message.error);
         ImGui::PopTextWrapPos();
         ImGui::PopStyleColor();
       }
@@ -718,6 +765,7 @@ void App::drawChatPane() {
             composer = text;
             focusComposer = true;
           }
+          a11y::ui::nameLastItem(text);
           const bool hovered = ImGui::IsItemHovered();
           ImDrawList* dl = ImGui::GetWindowDrawList();
           dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
@@ -852,6 +900,7 @@ void App::drawChatPane() {
         theme::pop();
       }
       noteMessageRect(messageId, blockMin, ImVec2(blockMin.x + contentWidth, ImGui::GetCursorScreenPos().y));
+      a11yGroup.close(blockMin, ImVec2(blockMin.x + contentWidth, ImGui::GetCursorScreenPos().y));
       gHeights.remember(messageId, ImGui::GetCursorScreenPos().y - blockMin.y, contentWidth, gFrameCounter);
       ImGui::Unindent(marginX);
       ImGui::PopID();

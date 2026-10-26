@@ -140,6 +140,7 @@ void composerSetText(const std::string& text);
 std::string composerText();
 bool composerFocus();                      // false when the view can't take focus yet
 bool composerIsFocused();
+void composerHandOff();                    // give the keyboard back to ImGui if the composer has it
 float composerContentHeight();             // laid-out text height in points
 void composerSetStyle(unsigned textColor, unsigned placeholderColor, unsigned accent,
                       float fontSize, bool sendOnEnter);

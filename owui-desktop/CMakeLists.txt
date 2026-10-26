@@ -54,6 +54,7 @@ target_compile_definitions(OpenWebUI PRIVATE
   IMGUI_DEFINE_MATH_OPERATORS
   IMGUI_DISABLE_OBSOLETE_FUNCTIONS
   IMGUI_USE_WCHAR32   # emoji and maths alphanumerics live above U+FFFF
+  IMGUI_ENABLE_TEST_ENGINE   # item hooks feed the accessibility tree (src/ui/a11y_imgui.cpp)
 )
 
 find_library(COCOA Cocoa REQUIRED)
