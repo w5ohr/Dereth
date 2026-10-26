@@ -30,9 +30,6 @@ int gFrameCounter = 0;
 double gStatsLoggedAt = 0.0;
 virtualize::Stats gStats;
 
-std::string gTitleEdit;
-bool gEditingTitle = false;
-bool gShowToolPicker = false;
 
 std::string formatUsage(const Json& usage) {
   if (!usage.is_object() || usage.empty()) return {};
@@ -115,22 +112,22 @@ void App::drawChatPane() {
 
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(palette.textDim));
-    if (gEditingTitle) {
+    if (editingTitle_) {
       ImGui::SetNextItemWidth(320);
-      if (ImGui::InputText("##title", &gTitleEdit,
+      if (ImGui::InputText("##title", &titleEdit_,
                            ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-        chat.title = gTitleEdit;
+        chat.title = titleEdit_;
         saveActiveChat();
         refreshChats();
-        gEditingTitle = false;
+        editingTitle_ = false;
       }
-      if (ImGui::IsItemDeactivated()) gEditingTitle = false;
+      if (ImGui::IsItemDeactivated()) editingTitle_ = false;
     } else {
       ImGui::AlignTextToFramePadding();
       ImGui::TextUnformatted(chat.title.c_str());
       if (ImGui::IsItemClicked() && !chat.id.empty()) {
-        gEditingTitle = true;
-        gTitleEdit = chat.title;
+        editingTitle_ = true;
+        titleEdit_ = chat.title;
       }
       if (chat.isPrivate) {
         ImGui::SameLine();
@@ -220,6 +217,7 @@ void App::drawChatPane() {
     if (icons::button("chatmenu", icons::Icon::Menu, "More")) ImGui::OpenPopup("##chatmore");
     if (ImGui::BeginPopup("##chatmore")) {
       if (ImGui::MenuItem("Open in new window", "Shift+Cmd+N")) openChatInNewWindow(chat.id, false);
+      if (ImGui::MenuItem("Open in new tab")) openChatInNewTab(chat.id);
       if (ImGui::MenuItem("Open as floating mini window")) openChatInNewWindow(chat.id, true);
       if (ImGui::MenuItem(floating ? "Stop floating on top" : "Float on top", "Shift+Cmd+T")) toggleFloating();
       if (ImGui::MenuItem("Conversation tree", nullptr, showTree)) showTree = !showTree;
@@ -1033,13 +1031,9 @@ void App::drawChatPane() {
     // spellcheck, emoji picker); the ImGui field stays as the fallback when
     // settings "nativeComposer" is off.
     const bool nativeComposer = settings().extra.value("nativeComposer", true);
-    static std::string syncedComposer;
-    static int syncedGeneration = -1;
-    static bool composerInstalled = false;
     float textHeight = 46.0f;
     if (nativeComposer) {
-      if (!composerInstalled) {
-        composerInstalled = true;
+      if (!native::composerInstalled()) {   // once per window (#121)
         native::ComposerCallbacks callbacks;
         callbacks.send = [this] {
           std::string text = native::composerText();
@@ -1091,13 +1085,13 @@ void App::drawChatPane() {
       // Three-way sync: a generation bump or a change made by app code pushes
       // `composer` into the view; otherwise the user's typing is pulled back.
       const std::string viewText = native::composerText();
-      if (syncedGeneration != composerGeneration || composer != syncedComposer) {
+      if (composerSyncedGeneration_ != composerGeneration || composer != composerSynced_) {
         native::composerSetText(composer);
-        syncedGeneration = composerGeneration;
-      } else if (viewText != syncedComposer) {
+        composerSyncedGeneration_ = composerGeneration;
+      } else if (viewText != composerSynced_) {
         composer = viewText;
       }
-      syncedComposer = composer;
+      composerSynced_ = composer;
       trackDraft();
       native::composerSetStyle(palette.text, palette.textFaint, palette.accent,
                                settings().fontSize * settings().uiScale, settings().sendOnEnter);
@@ -1276,7 +1270,7 @@ void App::drawChatPane() {
     ImGui::SameLine();
     if (icons::button("tools", icons::Icon::Wrench, "Tools", 0.0f,
                       activeToolIds.empty() ? 0 : palette.accent)) {
-      gShowToolPicker = true;
+      showToolPicker_ = true;
       if (toolList.empty()) {
         async::run([this] {
           api::Result res = api_.tools();
@@ -1343,12 +1337,12 @@ void App::drawChatPane() {
   ImGui::EndChild();
 
   // ------------------------------------------------------------ tool picker
-  if (gShowToolPicker) {
+  if (showToolPicker_) {
     ImGui::OpenPopup("Tools");
     ImGui::SetNextWindowSize(ImVec2(420, 400), ImGuiCond_Appearing);
-    if (ImGui::BeginPopupModal("Tools", &gShowToolPicker)) {
+    if (ImGui::BeginPopupModal("Tools", &showToolPicker_)) {
       if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-        gShowToolPicker = false;
+        showToolPicker_ = false;
         ImGui::CloseCurrentPopup();
       }
       if (toolList.empty()) {
@@ -1370,7 +1364,7 @@ void App::drawChatPane() {
             tool.value("meta", Json::object()).value("description", "");
         if (!description.empty()) widgets::dimText("    %s", description.c_str());
       }
-      if (widgets::primaryButton("Done", ImVec2(-FLT_MIN, 30))) gShowToolPicker = false;
+      if (widgets::primaryButton("Done", ImVec2(-FLT_MIN, 30))) showToolPicker_ = false;
       ImGui::EndPopup();
     }
   }

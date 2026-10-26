@@ -229,6 +229,21 @@ void App::drawSidebar(float width) {
     }
     a11y::ui::nameLastItem(summary.title.empty() ? std::string(i18n::tr("New Chat")) : summary.title);
     if (active) a11y::ui::helpLastItem(i18n::tr("Open now"));
+    // Drag a chat out past the window's edge to open it in a window of its
+    // own where it is dropped (#121).
+    {
+      const ImGuiIO& io = ImGui::GetIO();
+      const bool outside = io.MousePos.x < 0.0f || io.MousePos.y < 0.0f || io.MousePos.x > io.DisplaySize.x || io.MousePos.y > io.DisplaySize.y;
+      static std::string draggingOut;   // the row being dragged past the edge
+      if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 12.0f)) {
+        ImGui::SetTooltip("%s", i18n::tr(outside ? "Release to open in a new window" : "Drag outside the window to open it in its own"));
+        draggingOut = outside ? summary.id : std::string();
+      }
+      if (ImGui::IsItemDeactivated() && draggingOut == summary.id) {
+        draggingOut.clear();
+        if (outside && onDragChatOut) onDragChatOut(summary.id, io.MousePos.x, io.MousePos.y);
+      }
+    }
     const bool hovered = ImGui::IsItemHovered();
     ImDrawList* rowList = ImGui::GetWindowDrawList();
     if (active || hovered) {
@@ -272,6 +287,7 @@ void App::drawSidebar(float width) {
         });
       }
       if (ImGui::MenuItem("Open in new window")) openChatInNewWindow(summary.id, false);
+      if (ImGui::MenuItem("Open in new tab")) openChatInNewTab(summary.id);
       if (ImGui::MenuItem("Open as floating mini window")) openChatInNewWindow(summary.id, true);
       if (ImGui::MenuItem("Duplicate")) {
         const std::string id = summary.id;

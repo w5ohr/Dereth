@@ -112,6 +112,7 @@ std::vector<Shortcut> defaults() {
   add("cheatSheet", "Shortcut cheat sheet", "General", "cmd+/", false);
   add("chat.new", "New chat", "Chat", "cmd+n", true);
   add("chat.newWindow", "Open chat in a new window", "Chat", "cmd+shift+n", true);
+  add("chat.newTab", "New chat in a new tab", "Chat", "cmd+t", true);
   add("chat.find", "Find in chat", "Chat", "cmd+f", true);
   add("chat.compare", "Compare answers", "Chat", "cmd+d", true);
   add("chat.pins", "Pinned messages", "Chat", "cmd+i", true);

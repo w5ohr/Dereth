@@ -356,6 +356,8 @@ void App::drawPalette() {
   add("Quick ask", "command", [this] { openQuickAsk(); });
   add("Capture screen region to chat", "command", [this] { captureScreenToChat(true); });
   add("Open this chat in a new window", "command", [this] { openChatInNewWindow(chat.id, false); });
+  add("Open this chat in a new tab", "command", [this] { openChatInNewTab(chat.id); });
+  add("New chat in a new tab", "command", [this] { openChatInNewTab(""); });
   add("Open this chat as a floating mini window", "command", [this] { openChatInNewWindow(chat.id, true); });
   add("Float this window on top", "command", [this] { toggleFloating(); });
   for (const layouts::Layout& l : layouts::all(settings().extra)) {

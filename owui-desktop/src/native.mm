@@ -16,6 +16,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <type_traits>
 
 #include <nlohmann/json.hpp>
 
@@ -26,6 +27,8 @@ namespace native {
 namespace {
 
 Callbacks gCallbacks;
+__weak NSWindow* gCurrentWindow = nil;   // whose view is running (#121)
+std::function<void(void*, const std::function<void()>&)> gWindowScope;
 EventHotKeyRef gHotkeyRef = nullptr;
 NSStatusItem* gStatusItem = nil;
 NSUserActivity* gActivity = nil;
@@ -623,8 +626,37 @@ std::vector<std::string> chooseFolder() {
 
 // ---------------------------------------------------------------- composer
 
+@class OWUIComposerView;
+
+namespace native {
+// One native composer per window (#121); the chat pane's calls go to the slot
+// of the window being drawn (composerSelectWindow).
+struct ComposerSlot {
+  NSScrollView* scroll = nil;
+  OWUIComposerView* view = nil;
+  NSRect frame = NSZeroRect;
+  unsigned styleKey[3] = {0, 0, 0};
+  float fontSize = 0.0f;
+  ComposerCallbacks callbacks;
+};
+}  // namespace native
+
 namespace {
-native::ComposerCallbacks gComposer;
+std::map<void*, native::ComposerSlot> gSlots;   // by NSWindow (nullptr: the main window)
+native::ComposerSlot* gSlot = &gSlots[nullptr];
+
+// Runs a composer callback with that window's view current, and returns its result.
+template <typename F>
+auto inComposerWindow(NSView* view, F&& f) -> decltype(f()) {
+  using R = decltype(f());
+  if constexpr (std::is_void_v<R>) {
+    native::runInWindow((__bridge void*)view.window, [&] { f(); });
+  } else {
+    R result{};
+    native::runInWindow((__bridge void*)view.window, [&] { result = f(); });
+    return result;
+  }
+}
 
 NSColor* colorFromImU32(unsigned c) {
   // ImGui packs ABGR.
@@ -636,6 +668,7 @@ NSColor* colorFromImU32(unsigned c) {
 }  // namespace
 
 @interface OWUIComposerView : NSTextView
+@property(nonatomic) native::ComposerSlot* slot;
 @property(nonatomic, copy) NSString* placeholder;
 @property(nonatomic, strong) NSColor* placeholderColor;
 @property(nonatomic) BOOL sendOnEnter;
@@ -705,11 +738,11 @@ NSColor* colorFromImU32(unsigned c) {
   const NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
   const BOOL isReturn = event.keyCode == 36 || event.keyCode == 76;
   if (isReturn && (mods & NSEventModifierFlagCommand)) {
-    if (gComposer.send) gComposer.send();
+    if (self.slot->callbacks.send) inComposerWindow(self, [&] { return self.slot->callbacks.send(); });
     return;
   }
   if (event.keyCode == 53) {   // Escape
-    if (gComposer.escape) gComposer.escape();
+    if (self.slot->callbacks.escape) inComposerWindow(self, [&] { return self.slot->callbacks.escape(); });
     [self handOffToImGui];
     return;
   }
@@ -721,19 +754,19 @@ NSColor* colorFromImU32(unsigned c) {
     const NSEventModifierFlags mods = NSApp.currentEvent.modifierFlags;
     const BOOL shift = (mods & NSEventModifierFlagShift) != 0;
     if (self.sendOnEnter && !shift && !self.hasMarkedText) {
-      if (gComposer.send) gComposer.send();
+      if (self.slot->callbacks.send) inComposerWindow(self, [&] { return self.slot->callbacks.send(); });
       return;
     }
     [self insertText:@"\n" replacementRange:self.selectedRange];
     return;
   }
   if (selector == @selector(cancelOperation:)) {
-    if (gComposer.escape) gComposer.escape();
+    if (self.slot->callbacks.escape) inComposerWindow(self, [&] { return self.slot->callbacks.escape(); });
     [self handOffToImGui];
     return;
   }
   if (selector == @selector(insertTab:)) {
-    if (gComposer.tab) gComposer.tab();
+    if (self.slot->callbacks.tab) inComposerWindow(self, [&] { return self.slot->callbacks.tab(); });
     return;
   }
   // Plain Up/Down on the first/last line recall earlier prompts (shell-style);
@@ -744,12 +777,12 @@ NSColor* colorFromImU32(unsigned c) {
     const NSString* text = self.string;
     const BOOL firstLine = [text rangeOfString:@"\n" options:0 range:NSMakeRange(0, sel.location)].location == NSNotFound;
     const BOOL lastLine = [text rangeOfString:@"\n" options:0 range:NSMakeRange(NSMaxRange(sel), text.length - NSMaxRange(sel))].location == NSNotFound;
-    if (((up && firstLine) || (!up && lastLine)) && gComposer.history && gComposer.history(up ? -1 : 1)) return;
+    if (((up && firstLine) || (!up && lastLine)) && self.slot->callbacks.history && inComposerWindow(self, [&] { return self.slot->callbacks.history(up ? -1 : 1); })) return;
   }
   // Option+Up / Option+Down walk the transcript, as they do from the ImGui field.
   if (selector == @selector(moveToBeginningOfParagraph:) || selector == @selector(moveToEndOfParagraph:)) {
     const bool walked =
-        gComposer.navigate && gComposer.navigate(selector == @selector(moveToBeginningOfParagraph:) ? -1 : 1);
+        self.slot->callbacks.navigate && inComposerWindow(self, [&] { return self.slot->callbacks.navigate(selector == @selector(moveToBeginningOfParagraph:) ? -1 : 1); });
     if (walked) [self handOffToImGui];
     return;
   }
@@ -766,29 +799,56 @@ NSColor* colorFromImU32(unsigned c) {
 }
 
 - (void)paste:(id)sender {
-  if (gComposer.pasteImage && gComposer.pasteImage()) return;
-  if (gComposer.pasteText) {
+  if (self.slot->callbacks.pasteImage && inComposerWindow(self, [&] { return self.slot->callbacks.pasteImage(); })) return;
+  if (self.slot->callbacks.pasteText) {
     NSString* text = [[NSPasteboard generalPasteboard] stringForType:NSPasteboardTypeString];
-    if (text && gComposer.pasteText(native::toStd(text))) return;
+    if (text && inComposerWindow(self, [&] { return self.slot->callbacks.pasteText(native::toStd(text)); })) return;
   }
   [super paste:sender];
 }
 
 @end
 
+#define gComposerScroll (gSlot->scroll)
+#define gComposerView (gSlot->view)
+#define gComposerFrame (gSlot->frame)
+#define gComposerStyleKey (gSlot->styleKey)
+#define gComposerFontSize (gSlot->fontSize)
+
 namespace native {
-namespace {
-NSScrollView* gComposerScroll = nil;
-OWUIComposerView* gComposerView = nil;
-NSRect gComposerFrame = NSZeroRect;
-unsigned gComposerStyleKey[3] = {0, 0, 0};
-float gComposerFontSize = 0.0f;
-}  // namespace
+
+void runInWindow(void* window, const std::function<void()>& fn) {
+  if (gWindowScope) gWindowScope(window, fn);
+  else fn();
+}
+
+void setWindowScope(std::function<void(void* window, const std::function<void()>& fn)> scope) {
+  gWindowScope = std::move(scope);
+}
+
+void composerSelectWindow(void* window) { gSlot = &gSlots[window]; }
+
+void* composerSelectedWindow() {
+  for (auto& [key, slot] : gSlots) {
+    if (&slot == gSlot) return key;
+  }
+  return nullptr;
+}
+
+void composerForgetWindow(void* window) {
+  auto it = gSlots.find(window);
+  if (it == gSlots.end() || window == nullptr) return;
+  [it->second.scroll removeFromSuperview];
+  if (gSlot == &it->second) gSlot = &gSlots[nullptr];
+  gSlots.erase(it);
+}
+
+bool composerInstalled() { return gSlot->view != nil; }
 
 void composerInstall(const ComposerCallbacks& callbacks) {
-  gComposer = callbacks;
+  gSlot->callbacks = callbacks;
   if (gComposerView) return;
-  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSWindow* window = gCurrentWindow ?: (NSApp.mainWindow ?: NSApp.windows.firstObject);
   if (!window) return;
   NSView* host = window.contentView;
 
@@ -829,6 +889,7 @@ void composerInstall(const ComposerCallbacks& callbacks) {
 
   scroll.documentView = text;
   [host addSubview:scroll positioned:NSWindowAbove relativeTo:nil];
+  text.slot = gSlot;
   gComposerScroll = scroll;
   gComposerView = text;
 }
@@ -1520,6 +1581,16 @@ int pdfHighlight(const std::string& passage, int preferredPage) {
 
 namespace native {
 
+// The window whose view is being drawn or acted for (#121), else the key one.
+NSWindow* currentWindow() {
+  if (gCurrentWindow) return gCurrentWindow;
+  return NSApp.keyWindow ?: (NSApp.mainWindow ?: NSApp.windows.firstObject);
+}
+
+void setCurrentWindow(void* window) { gCurrentWindow = (__bridge NSWindow*)window; }
+void* currentWindowHandle() { return (__bridge void*)currentWindow(); }
+void* currentWindowSet() { return (__bridge void*)gCurrentWindow; }
+
 bool openNewInstance(const std::vector<std::string>& args) {
   // NSWorkspace rather than `open -n`: the new instance inherits this one's
   // environment (OWUI_SERVER / OWUI_TOKEN overrides included) and arguments.
@@ -1540,7 +1611,7 @@ bool openNewInstance(const std::vector<std::string>& args) {
 }
 
 void setFloating(bool floating) {
-  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSWindow* window = currentWindow();
   if (!window) return;
   window.level = floating ? NSFloatingWindowLevel : NSNormalWindowLevel;
   if (floating) {
@@ -1551,7 +1622,7 @@ void setFloating(bool floating) {
 }
 
 void setWindowSize(float width, float height) {
-  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSWindow* window = currentWindow();
   if (!window) return;
   NSRect frame = window.frame;
   frame.origin.y += frame.size.height - height;
@@ -1560,7 +1631,7 @@ void setWindowSize(float width, float height) {
 }
 
 void cascadeWindow() {
-  NSWindow* window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSWindow* window = currentWindow();
   if (!window) return;
   NSPoint topLeft = NSMakePoint(NSMinX(window.frame) + 40, NSMaxY(window.frame) - 40);
   [window cascadeTopLeftFromPoint:topLeft];

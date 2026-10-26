@@ -9,6 +9,8 @@
 #ifdef __OBJC__
 #import <MetalKit/MetalKit.h>
 @interface OWUIMetalView : MTKView
+// The ImGui context this view draws (each window has its own, #121).
+@property(nonatomic) void* imguiContext;
 @end
 #endif
 

@@ -135,7 +135,18 @@ static bool ImGui_ImplOSX_HandleEvent(NSEvent* event, NSView* view);
  and GLFW:
   https://github.com/glfw/glfw/blob/b55a517ae0c7b5127dffa79a64f5406021bf9076/src/cocoa_window.m#L722-L723
  */
+// owui-desktop patch (#121): one process, several windows, one ImGui context
+// each. Events reach every context's monitor and responder; each switches to
+// the context it was created for before touching ImGui.
+struct OwuiContextScope
+{
+    ImGuiContext* Prev;
+    explicit OwuiContextScope(ImGuiContext* ctx) : Prev(ImGui::GetCurrentContext()) { if (ctx) ImGui::SetCurrentContext(ctx); }
+    ~OwuiContextScope() { ImGui::SetCurrentContext(Prev); }
+};
+
 @interface KeyEventResponder: NSView<NSTextInputClient>
+- (void)owuiSetContext:(ImGuiContext*)ctx;
 @end
 
 @implementation KeyEventResponder
@@ -143,6 +154,12 @@ static bool ImGui_ImplOSX_HandleEvent(NSEvent* event, NSView* view);
     float _posX;
     float _posY;
     NSRect _imeRect;
+    ImGuiContext* _ctx;
+}
+
+- (void)owuiSetContext:(ImGuiContext*)ctx
+{
+    _ctx = ctx;
 }
 
 #pragma mark - Public
@@ -187,6 +204,7 @@ static bool ImGui_ImplOSX_HandleEvent(NSEvent* event, NSView* view);
 
 - (void)keyDown:(NSEvent*)event
 {
+    OwuiContextScope scope(_ctx);
     if (!ImGui_ImplOSX_HandleEvent(event, self))
         [super keyDown:event];
 
@@ -196,12 +214,14 @@ static bool ImGui_ImplOSX_HandleEvent(NSEvent* event, NSView* view);
 
 - (void)keyUp:(NSEvent*)event
 {
+    OwuiContextScope scope(_ctx);
     if (!ImGui_ImplOSX_HandleEvent(event, self))
         [super keyUp:event];
 }
 
 - (void)insertText:(id)aString replacementRange:(NSRange)replacementRange
 {
+    OwuiContextScope scope(_ctx);
     ImGuiIO& io = ImGui::GetIO();
 
     NSString* characters;
@@ -512,6 +532,7 @@ bool ImGui_ImplOSX_Init(NSView* view)
     // Add the NSTextInputClient to the view hierarchy,
     // to receive keyboard events and translate them to input text.
     bd->KeyEventResponder = [[KeyEventResponder alloc] initWithFrame:NSZeroRect];
+    [bd->KeyEventResponder owuiSetContext:ImGui::GetCurrentContext()];   // owui-desktop patch (#121)
     bd->InputContext = [[NSTextInputContext alloc] initWithClient:bd->KeyEventResponder];
     [view addSubview:bd->KeyEventResponder];
     ImGui_ImplOSX_AddTrackingArea(view);
@@ -868,9 +889,11 @@ static void ImGui_ImplOSX_AddTrackingArea(NSView* _Nonnull view)
     eventMask |= NSEventMaskRightMouseDown | NSEventMaskRightMouseUp | NSEventMaskRightMouseDragged;
     eventMask |= NSEventMaskOtherMouseDown | NSEventMaskOtherMouseUp | NSEventMaskOtherMouseDragged;
     eventMask |= NSEventMaskKeyDown | NSEventMaskKeyUp | NSEventMaskFlagsChanged;
+    ImGuiContext* ctx = ImGui::GetCurrentContext();   // owui-desktop patch (#121)
     bd->Monitor = [NSEvent addLocalMonitorForEventsMatchingMask:eventMask
                                                         handler:^NSEvent* _Nullable(NSEvent* event)
     {
+        OwuiContextScope scope(ctx);
         ImGui_ImplOSX_HandleEvent(event, view);
         return event;
     }];

@@ -62,6 +62,21 @@ void showMainWindow();
 // Windows. openNewInstance starts another copy of this app with `args`
 // (`open -n`), so a chat can live in its own window.
 bool openNewInstance(const std::vector<std::string>& args);
+
+// Windows in this process (#121). openChatWindow (main.mm) opens a chat - or a
+// new one when chatId is empty - in a window of its own; asTab adds it as a
+// tab of the key window. Window helpers below (floating, size, cascade) act on
+// the window set by setCurrentWindow while its view runs, else the key window.
+bool openChatWindow(const std::string& chatId, bool mini, bool asTab);
+// Same, placed with its top-left at a screen point (a chat dragged out).
+bool openChatWindowAt(const std::string& chatId, float screenX, float screenY);
+void setCurrentWindow(void* nsWindow);
+void* currentWindowHandle();   // the set one, else the key window
+void* currentWindowSet();      // the set one only (nullptr when none)
+// Runs fn as the given window (its view and ImGui context current); main.mm
+// installs the scope. Native views call this for events they forward.
+void runInWindow(void* nsWindow, const std::function<void()>& fn);
+void setWindowScope(std::function<void(void* nsWindow, const std::function<void()>& fn)> scope);
 void setFloating(bool floating);       // float above other apps' windows
 void setWindowSize(float width, float height);
 void cascadeWindow();                   // offset from the window already on screen
@@ -134,6 +149,12 @@ struct ComposerCallbacks {
   std::function<bool(const std::string&)> pasteText;   // return true when the text was taken elsewhere
 };
 void composerInstall(const ComposerCallbacks& callbacks);
+// One composer per window (#121): the calls here go to the selected window's
+// (nullptr: the main window). Forget drops a closed window's.
+void composerSelectWindow(void* nsWindow);
+void* composerSelectedWindow();
+void composerForgetWindow(void* nsWindow);
+bool composerInstalled();
 void composerSetFrame(float x, float y, float width, float height);
 void composerSetVisible(bool visible);
 void composerSetText(const std::string& text);

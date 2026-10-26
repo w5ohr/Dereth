@@ -76,7 +76,33 @@ void shutdown() {
   gWorkers.clear();
 }
 
+namespace {
+thread_local uint64_t tlView = 0;
+std::function<bool(uint64_t, const std::function<void()>&)> gViewRunner;
+
+// A job keeps the view it was queued from while it runs.
+std::function<void()> carryView(std::function<void()> job) {
+  const uint64_t token = tlView;
+  if (!token) return job;
+  return [token, job = std::move(job)] {
+    tlView = token;
+    job();
+    tlView = 0;
+  };
+}
+}  // namespace
+
+uint64_t currentView() { return tlView; }
+
+void postMain(std::function<void()> fn) {
+  std::lock_guard<std::mutex> lock(gMainMutex);
+  gMainQueue.push_back(std::move(fn));
+}
+void setCurrentView(uint64_t token) { tlView = token; }
+void setViewRunner(std::function<bool(uint64_t, const std::function<void()>&)> runner) { gViewRunner = std::move(runner); }
+
 void run(std::function<void()> job) {
+  job = carryView(std::move(job));
   gPending.fetch_add(1);
   {
     std::lock_guard<std::mutex> lock(gJobMutex);
@@ -86,6 +112,7 @@ void run(std::function<void()> job) {
 }
 
 void runDetached(std::function<void()> job) {
+  job = carryView(std::move(job));
   gPending.fetch_add(1);
   std::thread([job = std::move(job)] {
     job();
@@ -94,6 +121,14 @@ void runDetached(std::function<void()> job) {
 }
 
 void post(std::function<void()> fn) {
+  const uint64_t token = tlView;
+  if (token) {
+    // Back on the main thread it runs inside its window, or not at all once
+    // that window has closed.
+    fn = [token, fn = std::move(fn)] {
+      if (gViewRunner) gViewRunner(token, fn);
+    };
+  }
   std::lock_guard<std::mutex> lock(gMainMutex);
   gMainQueue.push_back(std::move(fn));
 }

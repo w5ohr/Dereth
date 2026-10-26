@@ -4,6 +4,7 @@
 #pragma once
 
 #include <functional>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -26,5 +27,17 @@ void post(std::function<void()> fn);
 void drain();
 
 int pendingJobs();
+
+// Windows (#121): each chat window has its own view of the app. A job queued
+// while a window's view is current carries that window's token to its worker,
+// and what it posts back runs inside that window again (through the runner),
+// so a reply lands in the window that asked. Token 0 is the main window.
+// Post to the main window's view whatever window is current.
+void postMain(std::function<void()> fn);
+uint64_t currentView();
+void setCurrentView(uint64_t token);   // the calling thread's token
+// Runs fn with the view `token` swapped in; false when that window is gone
+// (the callback is then dropped).
+void setViewRunner(std::function<bool(uint64_t token, const std::function<void()>& fn)> runner);
 
 }  // namespace async

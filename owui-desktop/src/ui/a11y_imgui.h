@@ -17,6 +17,11 @@
 namespace a11y::ui {
 
 void install(ImGuiContext* context);
+void forget(ImGuiContext* context);    // a window closed: drop its tree
+// Each ImGui context (each window, #121) has its own tree; snapshot() and
+// the rest act on the current context's.
+const Snapshot& snapshotFor(ImGuiContext* context);
+void requestPress(ImGuiContext* context, uint64_t key);
 // An assistive app is reading the window (or the debug channel is on): the
 // panes add the costlier nodes, such as every message's plain text.
 void setListening(bool listening);

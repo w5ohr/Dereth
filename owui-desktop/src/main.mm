@@ -13,6 +13,7 @@
 #include "platform.h"
 #include "core/http.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_metal.h"
 #include "imgui_impl_osx.h"
 #include "ui/a11y_bridge.h"
@@ -21,6 +22,13 @@
 #include "ui/theme.h"
 
 static std::string gIniPath;
+// Shared by every window (#121): one Metal device, the main ImGui context
+// (it owns the font atlas the chat windows share) and the main window.
+static id<MTLDevice> gDevice = nil;
+static ImGuiContext* gMainContext = nullptr;
+static __weak NSWindow* gMainWindow = nil;
+static void installWindowScopes();
+static bool chatWindowsOpen();
 
 @interface AppViewController : NSViewController <NSWindowDelegate, MTKViewDelegate>
 @property(nonatomic, strong) id<MTLDevice> device;
@@ -40,7 +48,8 @@ static std::string gIniPath;
   }
 
   IMGUI_CHECKVERSION();
-  ImGui::CreateContext();
+  gDevice = _device;
+  gMainContext = ImGui::CreateContext();
   a11y::ui::install(ImGui::GetCurrentContext());   // VoiceOver reads the widgets ImGui reports
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
@@ -77,6 +86,8 @@ void setPreferredFrameRate(int fps) {
 - (void)viewDidLoad {
   [super viewDidLoad];
   gMainView = self.mtkView;
+  ((OWUIMetalView*)self.mtkView).imguiContext = ImGui::GetCurrentContext();
+  installWindowScopes();
   self.mtkView.device = self.device;
   self.mtkView.delegate = self;
   ImGui_ImplOSX_Init(self.view);
@@ -87,6 +98,9 @@ void setPreferredFrameRate(int fps) {
 - (void)viewWillAppear {
   [super viewWillAppear];
   self.view.window.delegate = self;
+  gMainWindow = self.view.window;
+  // Chat windows (#121) share this identifier, so they can be tabs of one another.
+  self.view.window.tabbingIdentifier = @"OpenWebUIChat";
   self.view.window.title = @"Open WebUI";
   self.view.window.titlebarAppearsTransparent = YES;
   self.view.window.minSize = NSMakeSize(900, 600);
@@ -152,7 +166,17 @@ void setPreferredFrameRate(int fps) {
   ImGui::NewFrame();
   a11y::ui::beginFrame();
 
-  app::App::instance().frame();
+  native::setCurrentWindow((__bridge void*)view.window);
+  native::composerSelectWindow(nullptr);
+  {
+    // Toasts show in the key window; this one when no chat window is key.
+    app::App& app = app::App::instance();
+    NSWindow* key = NSApp.keyWindow;
+    app.toastsHere = key == view.window || !key || ![key.contentView isKindOfClass:[OWUIMetalView class]];
+    app.frame();
+    app.toastsHere = true;
+  }
+  native::setCurrentWindow(nullptr);
   a11y::ui::endFrame();
   a11y::bridge::frameDone((__bridge void*)view);
 
@@ -174,6 +198,15 @@ void setPreferredFrameRate(int fps) {
   (void)size;
 }
 
+// With chat windows open, closing the main window hides it: it carries the
+// app-wide work and the shared fonts, and comes back from the Dock or the
+// Window menu.
+- (BOOL)windowShouldClose:(NSWindow*)sender {
+  if (!chatWindowsOpen()) return YES;
+  [sender orderOut:nil];
+  return NO;
+}
+
 - (void)windowWillClose:(NSNotification*)notification {
   (void)notification;
   app::App::instance().shutdown();
@@ -183,6 +216,304 @@ void setPreferredFrameRate(int fps) {
 }
 
 @end
+
+// ---------------------------------------------------------------- chat windows (#121)
+//
+// A chat window is an NSWindow with its own MTKView and ImGui context (sharing
+// the main context's font atlas) over a ViewState in App. Everything done for
+// it - its frames, menu actions while it is key, its composer's keys, the
+// network callbacks it started, VoiceOver's presses - runs inside
+// asChatWindow(), which makes its context, native window and composer
+// current and swaps its view into App.
+
+@interface OWUIChatWindowController : NSObject <NSWindowDelegate, MTKViewDelegate>
+@property(nonatomic, strong) NSWindow* window;
+@property(nonatomic, strong) OWUIMetalView* view;
+@property(nonatomic, strong) id<MTLCommandQueue> queue;
+@property(nonatomic) uint64_t token;
+@property(nonatomic) ImGuiContext* context;
+@property(nonatomic) BOOL closing;
+- (instancetype)initWithChat:(const std::string&)chatId mini:(BOOL)mini;
+@end
+
+static NSMutableArray<OWUIChatWindowController*>* gChatWindows = nil;
+
+static bool chatWindowsOpen() { return gChatWindows.count > 0; }
+
+static OWUIChatWindowController* controllerForWindow(NSWindow* window) {
+  if (!window) return nil;
+  for (OWUIChatWindowController* c in gChatWindows) {
+    if (c.window == window && !c.closing) return c;
+  }
+  return nil;
+}
+
+static OWUIChatWindowController* controllerForToken(uint64_t token) {
+  for (OWUIChatWindowController* c in gChatWindows) {
+    if (c.token == token && !c.closing) return c;
+  }
+  return nil;
+}
+
+// Makes a chat window current (ImGui context, native window, composer, view)
+// for the life of the object; restores what was current after.
+struct ChatWindowScope {
+  OWUIChatWindowController* controller = nil;
+  ImGuiContext* previousContext = nullptr;
+  void* previousWindow = nullptr;
+  void* previousSlot = nullptr;
+  uint64_t previousView = app::App::kNoView;
+  explicit ChatWindowScope(OWUIChatWindowController* c) : controller(c) {
+    if (!controller) return;
+    previousContext = ImGui::GetCurrentContext();
+    previousWindow = native::currentWindowSet();
+    previousSlot = native::composerSelectedWindow();
+    ImGui::SetCurrentContext(controller.context);
+    native::setCurrentWindow((__bridge void*)controller.window);
+    native::composerSelectWindow((__bridge void*)controller.window);
+    previousView = app::App::instance().enterView(controller.token);
+  }
+  bool active() const { return controller && previousView != app::App::kNoView; }
+  ~ChatWindowScope() {
+    if (!controller) return;
+    app::App::instance().leaveView(previousView);
+    native::composerSelectWindow(previousSlot);
+    native::setCurrentWindow(previousWindow);
+    ImGui::SetCurrentContext(previousContext);
+  }
+};
+
+// Menu actions act on the key window: a chat window's view when one is key.
+struct KeyViewScope {
+  ChatWindowScope scope;
+  KeyViewScope() : scope(controllerForWindow(NSApp.keyWindow)) {}
+};
+
+static void installWindowScopes() {
+  native::setWindowScope([](void* window, const std::function<void()>& fn) {
+    OWUIChatWindowController* c = controllerForWindow((__bridge NSWindow*)window);
+    if (!c) {
+      fn();   // the main window
+      return;
+    }
+    ChatWindowScope scope(c);
+    if (scope.active()) fn();
+  });
+  async::setViewRunner([](uint64_t token, const std::function<void()>& fn) {
+    OWUIChatWindowController* c = controllerForToken(token);
+    if (!c) return false;   // closed: its callbacks are dropped
+    ChatWindowScope scope(c);
+    if (!scope.active()) return false;
+    fn();
+    return true;
+  });
+  // A chat dragged out of the sidebar past the window's edge opens where it was dropped.
+  app::App::instance().onDragChatOut = [](const std::string& chatId, float x, float y) {
+    NSWindow* window = (__bridge NSWindow*)native::currentWindowHandle();
+    NSView* content = window.contentView;
+    if (!content) return;
+    const NSPoint local = NSMakePoint(x, content.bounds.size.height - y);
+    const NSPoint screen = [window convertPointToScreen:[content convertPoint:local toView:nil]];
+    native::openChatWindowAt(chatId, static_cast<float>(screen.x), static_cast<float>(screen.y));
+  };
+}
+
+@implementation OWUIChatWindowController
+
+- (instancetype)initWithChat:(const std::string&)chatId mini:(BOOL)mini {
+  if (!(self = [super init])) return nil;
+  app::App& app = app::App::instance();
+  _token = app.createView(chatId, mini)->token;
+  const NSSize mainSize = gMainWindow ? gMainWindow.contentLayoutRect.size : NSMakeSize(1180, 820);
+  const NSRect frame = mini ? NSMakeRect(0, 0, 560, 760) : NSMakeRect(0, 0, std::max(900.0, mainSize.width - 80), std::max(600.0, mainSize.height - 60));
+  _window = [[NSWindow alloc] initWithContentRect:frame
+                                        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable |
+                                                  NSWindowStyleMaskMiniaturizable
+                                          backing:NSBackingStoreBuffered
+                                            defer:NO];
+  _window.releasedWhenClosed = NO;
+  _window.title = @"Open WebUI";
+  _window.titlebarAppearsTransparent = YES;
+  _window.minSize = mini ? NSMakeSize(420, 480) : NSMakeSize(700, 500);
+  _window.tabbingIdentifier = @"OpenWebUIChat";
+  _window.acceptsMouseMovedEvents = YES;
+  if (mini) {
+    _window.tabbingMode = NSWindowTabbingModeDisallowed;   // a floating mini window stays on its own
+    _window.level = NSFloatingWindowLevel;
+    _window.collectionBehavior |= NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
+  }
+  _view = [[OWUIMetalView alloc] initWithFrame:frame];
+  _view.device = gDevice;
+  _view.delegate = self;
+  _view.preferredFramesPerSecond = gMainView ? gMainView.preferredFramesPerSecond : 60;
+  _window.contentView = _view;
+  _window.delegate = self;
+  _queue = [gDevice newCommandQueue];
+
+  // Its own ImGui context over the main one's fonts; the backends bind to its view.
+  ImGuiContext* previous = ImGui::GetCurrentContext();
+  ImGui::SetCurrentContext(gMainContext);
+  ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+  _context = ImGui::CreateContext(atlas);
+  ImGui::SetCurrentContext(_context);
+  ImGuiIO& io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
+  io.ConfigWindowsMoveFromTitleBarOnly = true;
+  io.IniFilename = nullptr;   // layout.ini belongs to the main window
+  ImGui::GetStyle() = gMainContext->Style;
+  a11y::ui::install(_context);
+  ImGui_ImplMetal_Init(gDevice);
+  ImGui_ImplOSX_Init(_view);
+  _view.imguiContext = _context;
+  ImGui::SetCurrentContext(previous);
+  return self;
+}
+
+- (void)drawInMTKView:(MTKView*)view {
+  if (self.closing) return;
+  ImGuiContext* previous = ImGui::GetCurrentContext();
+  // With the main window hidden its frames stop; the app's queue still drains here.
+  if (!gMainWindow.visible) {
+    ImGui::SetCurrentContext(gMainContext);
+    async::drain();
+    images::uploadPending();
+    if (self.closing) {
+      ImGui::SetCurrentContext(previous);
+      return;
+    }
+  }
+  ImGui::SetCurrentContext(self.context);
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2(static_cast<float>(view.bounds.size.width), static_cast<float>(view.bounds.size.height));
+  const CGFloat scale = view.window.screen.backingScaleFactor ?: NSScreen.mainScreen.backingScaleFactor;
+  io.DisplayFramebufferScale = ImVec2(static_cast<float>(scale), static_cast<float>(scale));
+  ImGui::GetStyle() = gMainContext->Style;   // theme changes reach every window
+  if (gMainView) view.preferredFramesPerSecond = gMainView.preferredFramesPerSecond;
+
+  id<MTLCommandBuffer> commandBuffer = [self.queue commandBuffer];
+  MTLRenderPassDescriptor* descriptor = view.currentRenderPassDescriptor;
+  if (descriptor == nil) {
+    [commandBuffer commit];
+    ImGui::SetCurrentContext(previous);
+    return;
+  }
+  if (view.window.keyWindow && !a11y::ui::pressInFlight()) {
+    const NSPoint local = [view convertPoint:view.window.mouseLocationOutsideOfEventStream fromView:nil];
+    const float x = static_cast<float>(local.x);
+    const float y = static_cast<float>(view.bounds.size.height - local.y);
+    if (x >= 0.0f && y >= 0.0f && x <= view.bounds.size.width && y <= view.bounds.size.height) io.AddMousePosEvent(x, y);
+  }
+  ImGui_ImplMetal_NewFrame(descriptor);
+  ImGui_ImplOSX_NewFrame(view);
+  a11y::ui::pumpInput(io);
+  ImGui::NewFrame();
+  a11y::ui::beginFrame();
+  std::string title;
+  {
+    native::setCurrentWindow((__bridge void*)view.window);
+    native::composerSelectWindow((__bridge void*)view.window);
+    app::App& app = app::App::instance();
+    app.frameView(self.token, view.window.keyWindow);
+    app.runInView(self.token, [&] { title = app.chat.title; });
+    native::composerSelectWindow(nullptr);
+    native::setCurrentWindow(nullptr);
+  }
+  a11y::ui::endFrame();
+  a11y::bridge::frameDone((__bridge void*)view);
+  NSString* nsTitle = [NSString stringWithUTF8String:(title.empty() ? "Open WebUI" : title.c_str())] ?: @"Open WebUI";
+  if (![view.window.title isEqualToString:nsTitle]) view.window.title = nsTitle;
+
+  ImGui::Render();
+  ImVec4 clear = theme::toVec4(theme::palette().bg);
+  descriptor.colorAttachments[0].clearColor = MTLClearColorMake(clear.x, clear.y, clear.z, 1.0);
+  id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:descriptor];
+  ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, encoder);
+  [encoder endEncoding];
+  [commandBuffer presentDrawable:view.currentDrawable];
+  [commandBuffer commit];
+  ImGui::SetCurrentContext(previous);
+}
+
+- (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
+  (void)view;
+  (void)size;
+}
+
+- (void)windowWillClose:(NSNotification*)notification {
+  (void)notification;
+  self.closing = YES;
+  self.view.paused = YES;
+  self.view.delegate = nil;
+  // Tear down after this event, never inside a frame.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    ImGuiContext* previous = ImGui::GetCurrentContext();
+    ImGui::SetCurrentContext(self.context);
+    ImGui_ImplMetal_Shutdown();
+    ImGui_ImplOSX_Shutdown();
+    a11y::ui::forget(self.context);
+    ImGui::DestroyContext(self.context);
+    ImGui::SetCurrentContext(previous == self.context ? gMainContext : previous);
+    native::composerForgetWindow((__bridge void*)self.window);
+    app::App::instance().destroyView(self.token);
+    [gChatWindows removeObject:self];
+    // The main window was only hidden: with nothing else open, quit as its close would.
+    if (gChatWindows.count == 0 && gMainWindow && !gMainWindow.visible && !native::menuBarOnly()) [NSApp terminate:nil];
+  });
+}
+
+@end
+
+static OWUIChatWindowController* createChatWindow(const std::string& chatId, bool mini, bool asTab, bool placed, NSPoint topLeft) {
+  if (!gChatWindows) gChatWindows = [NSMutableArray array];
+  NSWindow* from = NSApp.keyWindow ?: gMainWindow;
+  OWUIChatWindowController* c = [[OWUIChatWindowController alloc] initWithChat:chatId mini:mini];
+  [gChatWindows addObject:c];
+  if (asTab && !mini && from && from.tabbingMode != NSWindowTabbingModeDisallowed) {
+    [from addTabbedWindow:c.window ordered:NSWindowAbove];
+    [c.window makeKeyAndOrderFront:nil];
+    return c;
+  }
+  if (placed) {
+    [c.window setFrameTopLeftPoint:topLeft];
+  } else if (from) {
+    [c.window setFrameTopLeftPoint:NSMakePoint(NSMinX(from.frame) + 40, NSMaxY(from.frame) - 40)];
+  } else {
+    [c.window center];
+  }
+  // A window, not a tab: AppKit would otherwise add it to a tab bar that is
+  // showing. Tabbing comes back once it is on screen, so it can be merged later.
+  const NSWindowTabbingMode mode = c.window.tabbingMode;
+  c.window.tabbingMode = NSWindowTabbingModeDisallowed;
+  [c.window makeKeyAndOrderFront:nil];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    c.window.tabbingMode = mode;
+  });
+  return c;
+}
+
+namespace native {
+// Deferred to the next turn of the run loop: these are asked for from inside
+// a frame (palette, menus drawn in ImGui), and a new ImGui context must not
+// be made in the middle of one.
+bool openChatWindow(const std::string& chatId, bool mini, bool asTab) {
+  if (!gDevice || !gMainContext) return false;
+  const std::string id = chatId;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    createChatWindow(id, mini, asTab, false, NSZeroPoint);
+  });
+  return true;
+}
+
+bool openChatWindowAt(const std::string& chatId, float screenX, float screenY) {
+  if (!gDevice || !gMainContext) return false;
+  const std::string id = chatId;
+  const NSPoint point = NSMakePoint(screenX, screenY);
+  dispatch_async(dispatch_get_main_queue(), ^{
+    createChatWindow(id, false, false, true, point);
+  });
+  return true;
+}
+}  // namespace native
 
 // The Edit menu owns Cmd+C/V/X/A/Z as key equivalents, so ImGui never sees
 // those keystrokes. Its actions arrive here instead and are replayed into
@@ -224,101 +555,112 @@ static void injectChord(ImGuiKey key, bool shift = false) {
   return self;
 }
 
-- (void)newChat:(id)sender {
+- (void)newChat:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App::instance().newChat();
 }
 
-- (void)selectPane:(NSMenuItem*)sender {
+- (void)selectPane:(NSMenuItem*)sender { KeyViewScope keyView;
   app::App::instance().pane = static_cast<app::Pane>(sender.tag);
 }
 
-- (void)toggleSidebar:(id)sender {
+- (void)toggleSidebar:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.sidebarVisible = !app.sidebarVisible;
 }
 
-- (void)stopGenerating:(id)sender {
+- (void)stopGenerating:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App::instance().stopAllStreams();
 }
 
-- (void)paste:(id)sender {
+- (void)paste:(id)sender { KeyViewScope keyView;
   (void)sender;
   if (app::App::instance().pasteImageFromClipboard()) return;
   injectChord(ImGuiKey_V);
 }
-- (void)copy:(id)sender { (void)sender; injectChord(ImGuiKey_C); }
-- (void)cut:(id)sender { (void)sender; injectChord(ImGuiKey_X); }
-- (void)selectAll:(id)sender { (void)sender; injectChord(ImGuiKey_A); }
-- (void)undo:(id)sender { (void)sender; injectChord(ImGuiKey_Z); }
-- (void)redo:(id)sender { (void)sender; injectChord(ImGuiKey_Z, true); }
+- (void)copy:(id)sender { KeyViewScope keyView; (void)sender; injectChord(ImGuiKey_C); }
+- (void)cut:(id)sender { KeyViewScope keyView; (void)sender; injectChord(ImGuiKey_X); }
+- (void)selectAll:(id)sender { KeyViewScope keyView; (void)sender; injectChord(ImGuiKey_A); }
+- (void)undo:(id)sender { KeyViewScope keyView; (void)sender; injectChord(ImGuiKey_Z); }
+- (void)redo:(id)sender { KeyViewScope keyView; (void)sender; injectChord(ImGuiKey_Z, true); }
 
-- (void)openPalette:(id)sender {
+- (void)openPalette:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.showPalette = true;
   app.paletteQuery.clear();
 }
 
-- (void)quickAsk:(id)sender {
+- (void)quickAsk:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App::instance().openQuickAsk();
 }
 
-- (void)captureScreen:(id)sender {
+- (void)captureScreen:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App::instance().captureScreenToChat(true);
 }
 
-- (void)toggleFloating:(id)sender {
+- (void)toggleFloating:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App::instance().toggleFloating();
 }
 
-- (void)openChatInNewWindow:(id)sender {
+- (void)newTab:(id)sender { KeyViewScope keyView;
+  (void)sender;
+  app::App::instance().openChatInNewTab("");
+}
+
+// The tab bar's + button.
+- (void)newWindowForTab:(id)sender {
+  (void)sender;
+  app::App::instance().openChatInNewTab("");
+}
+
+- (void)openChatInNewWindow:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.openChatInNewWindow(app.chat.id, false);
 }
 
-- (void)openMiniWindow:(id)sender {
+- (void)openMiniWindow:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.openChatInNewWindow(app.chat.id, true);
 }
 
-- (void)findInChat:(id)sender {
+- (void)findInChat:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.pane = app::Pane::Chat;
   app.showChatSearch = true;
 }
 
-- (void)exportMarkdown:(id)sender { (void)sender; app::App::instance().exportChat("md"); }
-- (void)exportHtml:(id)sender { (void)sender; app::App::instance().exportChat("html"); }
-- (void)exportPdf:(id)sender { (void)sender; app::App::instance().exportChat("pdf"); }
+- (void)exportMarkdown:(id)sender { KeyViewScope keyView; (void)sender; app::App::instance().exportChat("md"); }
+- (void)exportHtml:(id)sender { KeyViewScope keyView; (void)sender; app::App::instance().exportChat("html"); }
+- (void)exportPdf:(id)sender { KeyViewScope keyView; (void)sender; app::App::instance().exportChat("pdf"); }
 
-- (void)toggleCompare:(id)sender {
+- (void)toggleCompare:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.compareMode = !app.compareMode;
 }
 
-- (void)togglePins:(id)sender {
+- (void)togglePins:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.showPins = !app.showPins;
 }
 
-- (void)toggleVoice:(id)sender {
+- (void)toggleVoice:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App& app = app::App::instance();
   app.voiceMode = !app.voiceMode;
 }
 
-- (void)showInspector:(id)sender {
+- (void)showInspector:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App::instance().showContextInspector = true;
 }
@@ -395,6 +737,7 @@ static void buildMenuBar() {
     NSMenuItem* item = [fileMenu addItemWithTitle:@"Open Chat in New Window" action:@selector(openChatInNewWindow:) keyEquivalent:@"n"];
     item.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     tagMenuItem("chat.newWindow", item);
+    tagMenuItem("chat.newTab", [fileMenu addItemWithTitle:@"New Tab" action:@selector(newTab:) keyEquivalent:@"t"]);
     [fileMenu addItemWithTitle:@"Open Chat as Floating Mini Window" action:@selector(openMiniWindow:) keyEquivalent:@""];
   }
   {
@@ -545,6 +888,7 @@ int runI18nSelfTest();
 int runImgEditSelfTest();
 int runFadeSelfTest();
 int runVoiceOverSelfTest();
+int runWindowsSelfTest();
 int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
@@ -614,6 +958,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--imgedittest") return runImgEditSelfTest();
     if (std::string(argv[i]) == "--fadetest") return runFadeSelfTest();
     if (std::string(argv[i]) == "--voiceovertest") return runVoiceOverSelfTest();
+    if (std::string(argv[i]) == "--windowstest") return runWindowsSelfTest();
     if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.

@@ -2,6 +2,8 @@
 // a WKWebView beside the chat, with an editor, console output, save and
 // open-in-browser. Settings: extra["artifactAutoOpen"] (default on).
 #include "app.h"
+#include "core/async.h"
+#include "core/i18n.h"
 
 #include <algorithm>
 #include <functional>
@@ -276,17 +278,28 @@ void App::drawArtifactColumn(float width) {
   const ImVec2 pos = ImGui::GetCursorScreenPos();
   const float viewWidth = ImGui::GetContentRegionAvail().x;
   const float viewHeight = std::max(80.0f, ImGui::GetContentRegionAvail().y - editorHeight - consoleHeight - 8.0f);
-  native::artifactInstall();
-  native::artifactSetFrame(pos.x, pos.y, viewWidth, viewHeight);
-  artifactShownThisFrame = true;
-  // What the view shows is keyed on the artifact's code and the theme, so an
-  // edit, a different artifact or a theme switch reloads it.
-  const std::string loadKey = artifact.language + "|" + (theme::isDark() ? "d" : "l") + "|" + artifact.code;
-  if (loadKey != artifactLoadedKey_) {
-    artifactLoadedKey_ = loadKey;
-    native::artifactLoad(artifactDocument(artifact));
+  if (inSecondaryView()) {
+    // One web view, in the main window (#121): offer to show this chat there.
+    ImGui::BeginChild("##artifactelsewhere", ImVec2(viewWidth, viewHeight));
+    widgets::dimText("%s", i18n::tr("The live preview runs in the main window."));
+    if (ImGui::Button(i18n::tr("Open this chat in the main window"))) {
+      const std::string id = chat.id;
+      async::postMain([id] { App::instance().openChat(id); });   // runs as the main window
+    }
+    ImGui::EndChild();
+  } else {
+    native::artifactInstall();
+    native::artifactSetFrame(pos.x, pos.y, viewWidth, viewHeight);
+    artifactShownThisFrame = true;
+    // What the view shows is keyed on the artifact's code and the theme, so an
+    // edit, a different artifact or a theme switch reloads it.
+    const std::string loadKey = artifact.language + "|" + (theme::isDark() ? "d" : "l") + "|" + artifact.code;
+    if (loadKey != artifactLoadedKey_) {
+      artifactLoadedKey_ = loadKey;
+      native::artifactLoad(artifactDocument(artifact));
+    }
+    ImGui::Dummy(ImVec2(viewWidth, viewHeight));
   }
-  ImGui::Dummy(ImVec2(viewWidth, viewHeight));
 
   if (artifactEditing) {
     ImGui::Dummy(ImVec2(0, 4));

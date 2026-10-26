@@ -267,7 +267,32 @@ struct ModelInfo {
   Json raw;
 };
 
+struct ViewState;
+
+// Windows (#121): the members that belong to one window's view - its chat,
+// composer, scroll, overlays and streams. A chat window keeps its own copy in
+// a ViewState, swapped into App around everything that window does (its
+// frames, its menu actions, its network callbacks), so the UI code keeps
+// reading `chat` and `composer` and stays unaware there is more than one.
+// Everything else (the chat list, models, settings, the socket) is shared.
+#define OWUI_VIEW_MEMBERS(X)                                                                              \
+  X(pane) X(chat) X(selectedModels) X(attachments) X(composer) X(chatSearch) X(pendingScrollTo)           \
+  X(scrollToBottom) X(followTail) X(newTextPending) X(lastScrollY) X(lastScrollMaxY)                      \
+  X(pendingScrollRestore) X(scrollRestoreFrames) X(focusComposer) X(composerGeneration)                   \
+  X(showModelPicker) X(sidebarVisible) X(webSearchEnabled) X(imageGenerationEnabled)                      \
+  X(codeInterpreterEnabled) X(activeToolIds) X(showPalette) X(paletteQuery) X(showContextInspector)       \
+  X(lastPayload) X(showChatSearch) X(chatSearchQuery) X(chatSearchIndex) X(compareMode) X(showPins)       \
+  X(showTree) X(focusedMessageId) X(currentRegion_) X(a11yTextCache_) X(timings) X(streams_)              \
+  X(fadeTimelines_) X(codeResults) X(referenceChatId) X(referenceChat) X(citationPopup) X(citationChunk)  \
+  X(showCitation) X(showCheatSheet) X(showProjectFiles) X(composerShownThisFrame) X(composerTextHeight)   \
+  X(artifacts) X(showArtifacts) X(artifactIndex) X(artifactEdit) X(artifactEditing) X(artifactsKey_)      \
+  X(showDocument) X(showFanoutPicker) X(startChatId) X(floating) X(miniWindow) X(selectedMessages)        \
+  X(selectionMode) X(structuredHints) X(showQuickAsk) X(quickAskInput) X(quickAskChatId)                 \
+  X(composerSynced_) X(composerSyncedGeneration_) X(titleEdit_) X(editingTitle_) X(showToolPicker_)
+
 class App {
+  friend struct ViewState;
+
  public:
   static App& instance();
 
@@ -497,6 +522,7 @@ class App {
   // A second window is a second instance started with --chat (and --mini for
   // a compact window that floats above other apps).
   void openChatInNewWindow(const std::string& chatId, bool mini);
+  void openChatInNewTab(const std::string& chatId);   // "" opens a new chat (#121)
   void toggleFloating();
   void applyWindowMode();                // once the window exists: mini size, float, cascade
   std::string startChatId;               // from --chat; opened once signed in
@@ -1158,6 +1184,13 @@ class App {
                                   const std::map<std::string, agents::ToolSpec>& byName,
                                   bool autoApprove, const Json& approvals);
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
+  // Per window (#121): what the native composer was last synced to, the title
+  // being renamed, and the tool picker.
+  std::string composerSynced_;
+  int composerSyncedGeneration_ = -1;
+  std::string titleEdit_;
+  bool editingTitle_ = false;
+  bool showToolPicker_ = false;
   float composerTextHeight = 46.0f;           // text area height the composer used last frame
   bool showDocument = false;
   bool documentShownThisFrame = false;
@@ -1197,6 +1230,32 @@ class App {
   std::string artifactLoadedKey_;             // what the web view currently shows
   bool navigateFromComposer(int direction);   // Option+Up/Down out of the native composer; false if no messages
 
+  // --- windows (windows.cpp, #121) ------------------------------------------
+  // A new chat window's view: inherits the models and composer toggles of the
+  // view it was opened from, opens `chatId` (or a new chat) on its first frame.
+  ViewState* createView(const std::string& chatId, bool mini);
+  void destroyView(uint64_t token);           // its streams are stopped
+  ViewState* findView(uint64_t token);
+  // Runs fn with that window's view swapped in (and async's token set). False
+  // when the window is gone. Token 0 is the main window.
+  bool runInView(uint64_t token, const std::function<void()>& fn);
+  // The same as a pair, for a scope object (main.mm's menu actions): enter
+  // returns what leave needs; kNoView when the window is gone.
+  static constexpr uint64_t kNoView = ~0ull;
+  uint64_t enterView(uint64_t token);
+  void leaveView(uint64_t previous);
+  uint64_t activeView() const { return activeView_; }
+  bool inSecondaryView() const { return activeView_ != 0; }
+  // One frame of a chat window (called by its MTKView with its ImGui context current).
+  void frameView(uint64_t token, bool keyWindow);
+  size_t viewCount() const { return views_.size(); }
+  bool toastsHere = true;                     // this frame's window shows the toasts (the key one)
+  size_t streamCountAllViews() const;
+  std::vector<uint64_t> viewTokens() const;
+  // Dragging a chat out of the sidebar past the window's edge opens it in a
+  // window there (screen points, y up). Set by the sidebar, read by main.mm.
+  std::function<void(const std::string& chatId, float screenX, float screenY)> onDragChatOut;
+
  private:
   void drawLogin();
   void handleShortcuts();
@@ -1235,6 +1294,22 @@ class App {
   // shared_ptr copies, so a server can be dropped here while a call finishes.
   mutable std::mutex mcpMutex_;
   std::map<std::string, std::shared_ptr<mcp::Client>> mcpClients_;
+
+  // Windows (#121): the other windows' views, and which one is swapped in.
+  std::map<uint64_t, std::unique_ptr<ViewState>> views_;
+  uint64_t activeView_ = 0;
+  uint64_t nextViewToken_ = 1;
+  void swapView(ViewState& view);
+  void drawFrame(bool keyWindow);             // the UI of whichever view is swapped in
+};
+
+struct ViewState {
+  uint64_t token = 0;
+  bool opened = false;      // its chat (or a new one) has been opened
+  bool wantsNewChat = true;
+#define OWUI_VIEW_FIELD(name) decltype(App::name) name{};
+  OWUI_VIEW_MEMBERS(OWUI_VIEW_FIELD)
+#undef OWUI_VIEW_FIELD
 };
 
 }  // namespace app

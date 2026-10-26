@@ -2503,3 +2503,70 @@ plain text. The cost per frame was not measured.
 After each answer the server's task model proposes follow-ups (`generateFollowUps`, on
 with Settings' auto follow-ups); they draw as chips under the reply, fill the composer,
 and are saved with the message (`followUps`). Since #142 they are named buttons for VoiceOver.
+
+2026-10-25 121 (true multi-window), finished: one process, a window per chat, native
+tabs, drag a chat out. This replaces the second-instance version from 2026-10-24 (the
+--chat / --mini flags still work for scripts). Design: App keeps its single-window code,
+and a chat window swaps its state in. `OWUI_VIEW_MEMBERS` (app.h) names the 70 members that
+belong to one window: chat, composer and its sync state, scroll and follow state, overlays
+(palette, inspector, cheat sheet, citation, project files, find), selection, artifacts
+list, timings, fade timelines and the window's streams. A `ViewState` declares the same
+fields from it. `App::enterView` / `leaveView` / `runInView` (windows.cpp) swap them into
+App and back, nesting included, and token 0 is the main window. Everything done for a
+window runs inside that swap:
+its frames (`frameView`: app-wide ticks, the socket, the scheduler, recovery, the dock
+badge and the crash/update sheets stay with the main window; a chat window polls its own
+streams and draws its UI and overlays), menu actions while it is key (`KeyViewScope` at the
+top of every AppDelegate action, which also routes copy/paste chords to its ImGui context),
+its composer's keys (native.mm runs composer callbacks through `native::runInWindow`),
+VoiceOver presses and focus, and the network callbacks it started. `async::run` /
+`runDetached` now carry the queuing thread's view token to the worker. `post` from there
+runs back inside that window, or is dropped once it has closed. `postMain` posts to the
+main window explicitly. Socket deltas find their stream in any window, and generated
+titles and tags for a chat open elsewhere are routed to that window. Native side
+(main.mm): `OWUIChatWindowController` has an NSWindow, an `OWUIMetalView`, a command queue
+and its own ImGui context created over the main context's font atlas. Its style is copied
+from the main one each frame and its frame rate follows the main window's. With the main
+window hidden it drains the app's queue itself. Teardown happens after the close event and
+never inside a frame. The native composer is one slot per window (`composerSelectWindow`);
+window helpers (float, size, cascade) act on the window being drawn. Each ImGui context
+has its own accessibility state (a11y_imgui) and each view reads its own tree. One
+more vendored patch, marked "owui-desktop patch (#121)": imgui_impl_osx's event monitor
+and key responder switch to the context they were made for (they used whatever context
+was current, so a second context would have taken the first window's keys). Tabs: every
+window shares tabbingIdentifier "OpenWebUIChat"; File ▸ New Tab (Cmd+T, rebindable as
+chat.newTab), the tab bar's +
+(`newWindowForTab:`), "Open in new tab" in the sidebar row and chat More menus and the
+palette. "Open in new window" briefly disables tabbing so it is a window even while a tab
+bar shows. Dragging a sidebar row past the window's edge and releasing opens it there
+(`onDragChatOut`). The mini window is 560x760, has no sidebar, floats, and never tabs.
+Closing the main window with chat windows open hides it; closing the last chat window
+then quits, as closing the main window would. The artifact web view and PDF view stay in
+the main window (a chat window shows a note and "Open this chat in the main window").
+Found while testing: the composer sync state, the title being renamed and the tool picker
+were function or file statics, so the main window's frame wiped what was typed in a tab.
+All five are now view members. `--windowstest` runs 16 checks: fresh and inherited view
+fields, the mini view, members swapped in and back, a view keeping its changes, nesting,
+token 0 from inside a view, enter/leave, streams across windows, closing stopping streams
+and refusing the token; a job's token on the worker and its post routed back, a post for
+a closed window dropped, main posts skipping the runner; two contexts sharing one atlas
+with separate accessibility trees, and one closing while the other keeps drawing.
+Verified in the GUI against a scratch Open WebUI:
+- Cmd+T opened a native tab beside the first chat, with the + button.
+- Prompts sent in both tabs streamed at the same time. "The two oceans are Pacific and
+  Atlantic." landed in one tab and "The two planets are Mercury and Venus." in the other,
+  and each tab got its own generated title (Two Oceans, Planets).
+- Shift+Cmd+N with a tab bar showing opened a separate window, not a third tab.
+- Dragging the "Primary Colors" row out of a window opened it in a new window.
+- Cmd+W on that window left the app running.
+- Cmd+W on the main window hid it. A prompt sent from a chat window still got its reply
+  ("The fruit is an apple."), so the queue drained without the main window.
+- Closing the last two windows quit the app, with no crash report.
+- The palette's "floating mini window" opened Planets at 560x760 without a sidebar.
+Not covered: a scripted drag of about 0.3 s did not register as a drag-out, while a 1.4 s
+drag did. Tab drag-out is AppKit's own and was not driven. The floating level was not
+checked from outside. The main window's periodic work (chat-list refresh, socket
+reconnect, scheduler) pauses while it is hidden. Some app-wide tool windows (sketch, image
+and file editors, playground, tour) open in the main window even when started from a chat
+window. Two windows on the same chat both edit it, with the last save winning. Remaining
+static UI state in other panes, such as the settings pane's edit buffers, is shared.

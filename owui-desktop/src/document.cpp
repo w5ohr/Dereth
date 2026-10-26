@@ -3,6 +3,7 @@
 // highlighted. Opened from openCitation() for PDF sources; other sources
 // keep the excerpt popup.
 #include "app.h"
+#include "core/i18n.h"
 
 #include <algorithm>
 
@@ -129,10 +130,15 @@ void App::drawDocumentColumn(float width) {
   const ImVec2 avail = ImGui::GetContentRegionAvail();
   const float viewWidth = std::max(avail.x, 1.0f);
   const float viewHeight = std::max(avail.y - 4.0f, 80.0f);
-  native::pdfInstall();
-  native::pdfSetFrame(pos.x, pos.y, viewWidth, viewHeight);
-  documentShownThisFrame = !documentLoading && documentError.empty() && pages > 0;
-  ImGui::Dummy(ImVec2(viewWidth, viewHeight));
+  if (inSecondaryView()) {
+    widgets::dimText("%s", i18n::tr("Documents open in the main window."));   // one PDF view (#121)
+    ImGui::Dummy(ImVec2(viewWidth, viewHeight - ImGui::GetTextLineHeightWithSpacing()));
+  } else {
+    native::pdfInstall();
+    native::pdfSetFrame(pos.x, pos.y, viewWidth, viewHeight);
+    documentShownThisFrame = !documentLoading && documentError.empty() && pages > 0;
+    ImGui::Dummy(ImVec2(viewWidth, viewHeight));
+  }
   ImGui::EndChild();
 }
 

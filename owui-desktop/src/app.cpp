@@ -856,6 +856,12 @@ std::shared_ptr<Stream> App::streamFor(const std::string& messageId) {
   for (auto& stream : streams_) {
     if (stream->messageId == messageId) return stream;
   }
+  // A socket delta for a reply another chat window is streaming (#121).
+  for (auto& [token, view] : views_) {
+    for (auto& stream : view->streams_) {
+      if (stream->messageId == messageId) return stream;
+    }
+  }
   return nullptr;
 }
 
@@ -873,6 +879,24 @@ void App::handleSocketEvent(const std::string& name, const Json& payload) {
   std::string eventChatId;
   if (!api::parseSocketEvent(payload, &delta, &messageId, &eventChatId)) return;
 
+  // A title or tags for a chat open in another window go to that window (#121).
+  if (!eventChatId.empty() && eventChatId != chat.id && !inSecondaryView() && (!delta.title.empty() || delta.tags.is_array())) {
+    for (const uint64_t token : viewTokens()) {
+      ViewState* view = findView(token);
+      if (view && view->chat.id == eventChatId) {
+        runInView(token, [this, delta] {
+          if (!delta.title.empty()) chat.title = delta.title;
+          if (delta.tags.is_array()) {
+            chat.tags.clear();
+            for (const auto& tag : delta.tags) {
+              if (tag.is_string()) chat.tags.push_back(tag);
+            }
+          }
+        });
+        if (!delta.title.empty()) refreshChats();
+      }
+    }
+  }
   if (!delta.title.empty() && eventChatId == chat.id) {
     chat.title = delta.title;
     refreshChats();
@@ -1574,14 +1598,19 @@ void App::rateMessage(const std::string& messageId, int rating) {
 // --------------------------------------------------------------------- frame
 
 void App::frame() {
-  tickLowPower();
+  // A chat window (#121) runs this too, with its view swapped in: it polls
+  // its own streams and draws its own UI; app-wide work stays with the main window.
+  const bool secondary = inSecondaryView();
+  if (!secondary) tickLowPower();
   pollStreams();
-  tickTts();
-  tickSmartFolders();
-  tickBackendPool();
-  tickOnboarding();
-  tickCrashReporter();
-  tickUpdater();
+  if (!secondary) {
+    tickTts();
+    tickSmartFolders();
+    tickBackendPool();
+    tickOnboarding();
+    tickCrashReporter();
+    tickUpdater();
+  }
   handleShortcuts();
 
   // The native composer is a Cocoa view above everything ImGui draws, so it
@@ -1593,16 +1622,18 @@ void App::frame() {
                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     native::composerSetVisible(composerShownThisFrame && !overlay);
     composerShownThisFrame = false;
-    native::artifactSetVisible(artifactShownThisFrame && !overlay);
-    artifactShownThisFrame = false;
-    native::pdfSetVisible(documentShownThisFrame && !overlay);
-    documentShownThisFrame = false;
+    if (!secondary) {   // the web and PDF views live in the main window
+      native::artifactSetVisible(artifactShownThisFrame && !overlay);
+      artifactShownThisFrame = false;
+      native::pdfSetVisible(documentShownThisFrame && !overlay);
+      documentShownThisFrame = false;
+    }
   }
 
   // Native hooks need the window to exist, so they go in on the first frame
   // rather than in init().
   static bool nativeInstalled = false;
-  if (!nativeInstalled) {
+  if (!nativeInstalled && !secondary) {
     nativeInstalled = true;
     installNativeHooks();
     projectFolder = settings().extra.value("projectFolder", "");
@@ -1622,18 +1653,18 @@ void App::frame() {
       }
     }
   }
-  if (signedIn_ && !chatsLoading && !inflightChecked_) {
+  if (signedIn_ && !chatsLoading && !inflightChecked_ && !secondary) {
     inflightChecked_ = true;
     recoverInflight();
   }
-  tickRecovery();
-  if (signedIn_ && !startChatId.empty() && !chatsLoading) {
+  if (!secondary) tickRecovery();
+  if (signedIn_ && !startChatId.empty() && (!chatsLoading || secondary)) {
     // --chat: this window was opened for one conversation.
     const std::string id = startChatId;
     startChatId.clear();
     openChat(id);
   }
-  if (signedIn_) {
+  if (signedIn_ && !secondary) {
     tickScheduler();
     tickVoiceMode();
     tickOfflineQueue();
@@ -1664,8 +1695,9 @@ void App::frame() {
   }
   {
     static size_t lastBadge = static_cast<size_t>(-1);
-    if (streams_.size() != lastBadge) {
-      lastBadge = streams_.size();
+    const size_t streaming = secondary ? lastBadge : streamCountAllViews();
+    if (streaming != lastBadge) {
+      lastBadge = streaming;
       native::setDockBadge(lastBadge ? std::to_string(lastBadge) : "");
     }
   }
@@ -1751,8 +1783,19 @@ void App::frame() {
   ImGui::End();
 
   if (showModelPicker) drawModelPicker();
-  drawModelCompare();
-  if (signedIn_) {
+  if (signedIn_ && secondary) {
+    // A chat window draws its own overlays; the app-wide sheets and tool
+    // windows (editors, sketch, tour, recipes) stay in the main window.
+    drawPalette();
+    drawQuickAsk();
+    drawContextInspector();
+    drawCheatSheet();
+    drawPromptForm();
+    drawRedactionSheet();
+    drawCitationPopup();
+    drawProjectFilesPopup();
+  } else if (signedIn_) {
+    drawModelCompare();
     drawPalette();
     drawQuickAsk();
     drawContextInspector();
@@ -1773,13 +1816,15 @@ void App::frame() {
     drawCitationPopup();
     drawProjectFilesPopup();
   }
-  drawCrashSheet();   // on every screen: a crash at start-up leaves you at sign-in
-  drawUpdatedSheet();
-  widgets::renderToasts();
+  if (!secondary) {
+    drawCrashSheet();   // on every screen: a crash at start-up leaves you at sign-in
+    drawUpdatedSheet();
+  }
+  if (toastsHere) widgets::renderToasts();   // in the key window
 
   // Periodic refresh of the chat list while idle.
   const double now = core::nowMillis();
-  if (signedIn_ && now - lastChatRefresh_ > 60000.0) {
+  if (signedIn_ && !secondary && now - lastChatRefresh_ > 60000.0) {
     lastChatRefresh_ = now;
     refreshChats();
   }

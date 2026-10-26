@@ -16,30 +16,47 @@ struct Added {
   uint64_t frame = 0;
 };
 
-bool gCollecting = false;
-uint64_t gFrame = 0;
-Builder gBuilder;
-Snapshot gSnap;
-std::unordered_map<ImGuiID, Added> gAdded;
 // Tab items report their label before their rectangle: held until ItemAdd.
 struct PendingInfo {
   std::string label;
   ImGuiItemStatusFlags flags = 0;
   uint64_t frame = 0;
 };
-std::unordered_map<ImGuiID, PendingInfo> gPendingInfo;
-std::unordered_map<int, int> gTextOrdinal;   // parent index -> static texts so far
-bool gLastSkipped = false;                   // the last hooked item was clipped: don't name the previous one
-
-std::mutex gAnnounceMutex;
-std::vector<std::string> gAnnouncements;
 
 struct Press {
   uint64_t key = 0;
   int stage = 0;
 };
-Press gPress;
-uint64_t gLastPressed = 0;
+
+// One per ImGui context: each window (#121) has its own tree.
+struct State {
+  bool collecting = false;
+  uint64_t frame = 0;
+  Builder builder;
+  Snapshot snap;
+  std::unordered_map<ImGuiID, Added> added;
+  std::unordered_map<ImGuiID, PendingInfo> pendingInfo;
+  std::unordered_map<int, int> textOrdinal;   // parent index -> static texts so far
+  bool lastSkipped = false;                   // the last hooked item was clipped: don't name the previous one
+  Press press;
+  uint64_t lastPressed = 0;
+};
+std::unordered_map<ImGuiContext*, State> gStates;
+State& stateFor(ImGuiContext* ctx) { return gStates[ctx]; }
+State& S() { return stateFor(GImGui); }
+#define gCollecting (S().collecting)
+#define gFrame (S().frame)
+#define gBuilder (S().builder)
+#define gSnap (S().snap)
+#define gAdded (S().added)
+#define gPendingInfo (S().pendingInfo)
+#define gTextOrdinal (S().textOrdinal)
+#define gLastSkipped (S().lastSkipped)
+#define gPress (S().press)
+#define gLastPressed (S().lastPressed)
+
+std::mutex gAnnounceMutex;
+std::vector<std::string> gAnnouncements;
 std::function<void(const std::string&)> gFocusHandler;
 
 uint32_t scopeOf(ImGuiWindow* window) {
@@ -116,6 +133,16 @@ bool listening() { return gListeningFlag; }
 
 void install(ImGuiContext* context) {
   if (context) context->TestEngineHookItems = true;
+}
+
+void forget(ImGuiContext* context) { gStates.erase(context); }
+
+const Snapshot& snapshotFor(ImGuiContext* context) { return stateFor(context).snap; }
+
+void requestPress(ImGuiContext* context, uint64_t key) {
+  State& st = stateFor(context);
+  st.press.key = key;
+  st.press.stage = 0;
 }
 
 void beginFrame() {
@@ -363,7 +390,7 @@ void requestFocus(uint64_t key) {
 
 void ImGuiTestEngineHook_ItemAdd(ImGuiContext* ctx, ImGuiID id, const ImRect& bb, const ImGuiLastItemData* item_data) {
   using namespace a11y::ui;
-  if (!gCollecting || id == 0) return;
+  if (!a11y::ui::stateFor(ctx).collecting || id == 0) return;
   ImGuiWindow* window = ctx->CurrentWindow;
   Added& added = gAdded[id];
   added.bb = bb;
@@ -380,7 +407,7 @@ void ImGuiTestEngineHook_ItemAdd(ImGuiContext* ctx, ImGuiID id, const ImRect& bb
 }
 
 void ImGuiTestEngineHook_ItemInfo(ImGuiContext* ctx, ImGuiID id, const char* label, ImGuiItemStatusFlags flags) {
-  if (!a11y::ui::gCollecting) return;
+  if (!a11y::ui::stateFor(ctx).collecting) return;
   a11y::ui::onItemInfo(ctx, id, label, flags);
 }
 

@@ -8,6 +8,7 @@
 #include <unordered_set>
 
 #include "core/a11y.h"
+#include "native.h"
 #include "ui/a11y_imgui.h"
 
 namespace {
@@ -19,6 +20,9 @@ double nowSeconds() { return [NSProcessInfo processInfo].systemUptime; }
 
 @interface OWUIMetalView ()
 @property(nonatomic, strong) NSMutableDictionary<NSNumber*, OWUIAXElement*>* elements;
+@property(nonatomic) uint64_t lastHash;
+@property(nonatomic) double lastLayoutPost;
+@property(nonatomic) uint64_t lastFocusKey;
 - (OWUIAXElement*)elementForKey:(uint64_t)key;
 - (NSRect)screenRect:(const a11y::Rect&)r;
 @end
@@ -28,14 +32,17 @@ double nowSeconds() { return [NSProcessInfo processInfo].systemUptime; }
 @property(nonatomic, weak) OWUIMetalView* host;
 @end
 
-static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().find(key); }
+static const a11y::Snapshot& snapOf(OWUIMetalView* view) {
+  return view && view.imguiContext ? a11y::ui::snapshotFor(static_cast<ImGuiContext*>(view.imguiContext)) : a11y::ui::snapshot();
+}
+static const a11y::Node* nodeFor(OWUIMetalView* host, uint64_t key) { return snapOf(host).find(key); }
 
 @implementation OWUIAXElement
 
-- (BOOL)isAccessibilityElement { return nodeFor(self.key) != nullptr; }
+- (BOOL)isAccessibilityElement { return nodeFor(self.host, self.key) != nullptr; }
 
 - (NSAccessibilityRole)accessibilityRole {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   if (!n) return NSAccessibilityUnknownRole;
   switch (n->role) {
     case a11y::Role::Group:
@@ -54,13 +61,13 @@ static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().fin
 }
 
 - (NSAccessibilitySubrole)accessibilitySubrole {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   if (n && n->role == a11y::Role::Tab) return NSAccessibilityTabButtonSubrole;
   return nil;
 }
 
 - (NSString*)accessibilityRoleDescription {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   if (!n) return nil;
   if (n->role == a11y::Role::Heading) return @"heading";
   if (n->role == a11y::Role::Dialog) return @"dialog";
@@ -70,19 +77,19 @@ static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().fin
 }
 
 - (NSString*)accessibilityLabel {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   if (!n || n->label.empty()) return nil;
   return [NSString stringWithUTF8String:n->label.c_str()];
 }
 
 - (NSString*)accessibilityTitle {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   if (!n || n->role != a11y::Role::Heading) return nil;
   return [NSString stringWithUTF8String:n->label.c_str()];
 }
 
 - (id)accessibilityValue {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   if (!n) return nil;
   if (n->checkable) return @(n->checked ? 1 : 0);
   if (n->role == a11y::Role::Tab) return @(n->selected ? 1 : 0);
@@ -95,69 +102,72 @@ static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().fin
 }
 
 - (NSString*)accessibilityHelp {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   if (!n || n->help.empty()) return nil;
   return [NSString stringWithUTF8String:n->help.c_str()];
 }
 
 - (BOOL)isAccessibilityEnabled {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   return n && n->enabled;
 }
 
 - (BOOL)isAccessibilitySelected {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   return n && n->selected;
 }
 
 - (BOOL)isAccessibilityExpanded {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   return n && n->expanded;
 }
 
 - (BOOL)isAccessibilityFocused {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   return n && n->focused;
 }
 
 - (void)setAccessibilityFocused:(BOOL)focused {
-  if (focused) a11y::ui::requestFocus(self.key);
+  if (!focused) return;
+  const uint64_t key = self.key;
+  native::runInWindow((__bridge void*)self.host.window, [key] { a11y::ui::requestFocus(key); });
 }
 
 - (NSRect)accessibilityFrame {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   OWUIMetalView* host = self.host;
   if (!n || !host) return NSZeroRect;
   return [host screenRect:n->frame];
 }
 
 - (id)accessibilityParent {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   OWUIMetalView* host = self.host;
   if (!n || !host) return host;
   if (n->parent < 0) return host;
-  return [host elementForKey:a11y::ui::snapshot().nodes[static_cast<size_t>(n->parent)].key];
+  return [host elementForKey:snapOf(host).nodes[static_cast<size_t>(n->parent)].key];
 }
 
 - (NSArray*)accessibilityChildren {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
   OWUIMetalView* host = self.host;
   if (!n || !host || n->children.empty()) return @[];
   NSMutableArray* out = [NSMutableArray arrayWithCapacity:n->children.size()];
-  const a11y::Snapshot& snap = a11y::ui::snapshot();
+  const a11y::Snapshot& snap = snapOf(host);
   for (int child : n->children) [out addObject:[host elementForKey:snap.nodes[static_cast<size_t>(child)].key]];
   return out;
 }
 
 - (BOOL)accessibilityPerformPress {
-  const a11y::Node* n = nodeFor(self.key);
+  const a11y::Node* n = nodeFor(self.host, self.key);
+  OWUIMetalView* host = self.host;
   if (!n || !n->enabled) return NO;
   if (n->role == a11y::Role::Group || n->role == a11y::Role::StaticText || n->role == a11y::Role::Heading ||
       n->role == a11y::Role::Dialog) {
-    a11y::ui::requestFocus(self.key);
+    const uint64_t key = self.key;
+    native::runInWindow((__bridge void*)host.window, [key] { a11y::ui::requestFocus(key); });
     return !n->tag.empty();
   }
-  OWUIMetalView* host = self.host;
   // A text field takes typing through ImGui's own key responder, so hand it
   // the keyboard first (the native composer may hold it).
   if (n->role == a11y::Role::TextField && host) {
@@ -166,7 +176,8 @@ static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().fin
       if (responder && [sub isKindOfClass:responder]) [host.window makeFirstResponder:sub];
     }
   }
-  a11y::ui::requestPress(self.key);
+  ImGuiContext* context = host.imguiContext ? static_cast<ImGuiContext*>(host.imguiContext) : ImGui::GetCurrentContext();
+  a11y::ui::requestPress(context, self.key);
   return YES;
 }
 
@@ -217,7 +228,7 @@ static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().fin
 
 - (NSArray*)accessibilityChildren {
   gLastQuery = nowSeconds();
-  const a11y::Snapshot& snap = a11y::ui::snapshot();
+  const a11y::Snapshot& snap = snapOf(self);
   NSMutableArray* out = [NSMutableArray arrayWithCapacity:snap.roots.size() + 2];
   for (int root : snap.roots) [out addObject:[self elementForKey:snap.nodes[static_cast<size_t>(root)].key]];
   // A modal hides the rest of the window, the native views included.
@@ -238,14 +249,14 @@ static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().fin
     }
   }
   const NSPoint local = [self convertPoint:inWindow fromView:nil];
-  const a11y::Snapshot& snap = a11y::ui::snapshot();
+  const a11y::Snapshot& snap = snapOf(self);
   const int index = snap.hitTest(static_cast<float>(local.x), static_cast<float>(self.bounds.size.height - local.y));
   if (index < 0) return self;
   return [self elementForKey:snap.nodes[static_cast<size_t>(index)].key];
 }
 
 - (id)accessibilityFocusedUIElement {
-  const a11y::Snapshot& snap = a11y::ui::snapshot();
+  const a11y::Snapshot& snap = snapOf(self);
   const int index = snap.focusedIndex();
   if (index < 0) return self;
   return [self elementForKey:snap.nodes[static_cast<size_t>(index)].key];
@@ -258,9 +269,6 @@ static const a11y::Node* nodeFor(uint64_t key) { return a11y::ui::snapshot().fin
 namespace a11y::bridge {
 namespace {
 
-uint64_t gLastHash = 0;
-double gLastLayoutPost = 0;
-uint64_t gLastFocusKey = 0;
 double gLastDebugWrite = 0;
 
 std::string toStd(id value) {
@@ -314,14 +322,24 @@ bool walk(id element, int depth, int* budget, Visit&& visit) {
 
 id findByLabel(OWUIMetalView* view, const std::string& label) {
   id found = nil;
-  int budget = 6000;
-  walk(view.window, 0, &budget, [&](id element, int) {
+  int budget = 12000;
+  // Every window of the app (#121), the key one first.
+  NSMutableArray* windows = [NSMutableArray array];
+  if (NSApp.keyWindow) [windows addObject:NSApp.keyWindow];
+  for (NSWindow* w in NSApp.windows) {
+    if (w.visible && ![windows containsObject:w]) [windows addObject:w];
+  }
+  if (windows.count == 0 && view.window) [windows addObject:view.window];
+  for (NSWindow* w in windows) {
+    if (found) break;
+    walk(w, 0, &budget, [&](id element, int) {
     if (toStd(ask(element, @selector(accessibilityLabel))) == label || toStd(ask(element, @selector(accessibilityTitle))) == label) {
       found = element;
       return true;
     }
     return false;
-  });
+    });
+  }
   return found;
 }
 
@@ -346,7 +364,12 @@ void debugChannel(OWUIMetalView* view, const std::vector<std::string>& announced
   const double now = nowSeconds();
   if (now - gLastDebugWrite < 1.0) return;
   gLastDebugWrite = now;
-  writeFile(base + "/tree.txt", dumpWindow((__bridge void*)view));
+  std::string all;
+  for (NSWindow* w in NSApp.windows) {
+    if (!w.visible || ![w.contentView isKindOfClass:[OWUIMetalView class]]) continue;
+    all += dumpWindow((__bridge void*)w.contentView);
+  }
+  writeFile(base + "/tree.txt", all);
   std::ifstream cmdFile(base + "/cmd.txt");
   if (!cmdFile) return;
   std::string command, log;
@@ -368,7 +391,7 @@ void debugChannel(OWUIMetalView* view, const std::vector<std::string>& announced
 void frameDone(void* metalView) {
   OWUIMetalView* view = (__bridge OWUIMetalView*)metalView;
   if (!view) return;
-  const a11y::Snapshot& snap = a11y::ui::snapshot();
+  const a11y::Snapshot& snap = snapOf(view);
   const double now = nowSeconds();
   static const bool debugOn = std::getenv("OWUI_A11Y_DEBUG") && *std::getenv("OWUI_A11Y_DEBUG");
   const bool listening = now - gLastQuery < 120.0 || NSWorkspace.sharedWorkspace.voiceOverEnabled || debugOn;
@@ -377,16 +400,16 @@ void frameDone(void* metalView) {
   // Layout: nodes came or went. Throttled, a streaming reply would otherwise
   // post every frame.
   const uint64_t hash = snap.structureHash();
-  if (hash != gLastHash && now - gLastLayoutPost > 0.5) {
-    gLastHash = hash;
-    gLastLayoutPost = now;
+  if (hash != view.lastHash && now - view.lastLayoutPost > 0.5) {
+    view.lastHash = hash;
+    view.lastLayoutPost = now;
     if (listening) NSAccessibilityPostNotification(view, NSAccessibilityLayoutChangedNotification);
   }
   // Focus: ImGui's nav cursor or the focused message moved.
   const int focused = snap.focusedIndex();
   const uint64_t focusKey = focused >= 0 ? snap.nodes[static_cast<size_t>(focused)].key : 0;
-  if (focusKey != gLastFocusKey) {
-    gLastFocusKey = focusKey;
+  if (focusKey != view.lastFocusKey) {
+    view.lastFocusKey = focusKey;
     if (focusKey && listening) NSAccessibilityPostNotification([view elementForKey:focusKey], NSAccessibilityFocusedUIElementChangedNotification);
   }
   const std::vector<std::string> announced = a11y::ui::takeAnnouncements();
