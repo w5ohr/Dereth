@@ -3,6 +3,7 @@
 // sleeps (and on quit when asked); the card under Settings; Warm now /
 // Release now.
 #include "app.h"
+#include "native.h"
 #include "core/async.h"
 #include "core/common.h"
 #include "core/http.h"
@@ -88,7 +89,7 @@ void App::warmModelNow(bool release) {
 void App::tickWarmup() {
   const warmup::Plan p = plan();
   if (!p.enabled || !signedIn_ || gBusy || gSleeping || gHeld || deferHeavyWork()) return;
-  const bool frontmost = !ImGui::GetIO().AppFocusLost;
+  const bool frontmost = native::appIsActive();   // AppFocusLost lasts one frame only
   const std::string model = warmupModel();
   if (model.empty()) return;
   static double firstTick = -1.0;

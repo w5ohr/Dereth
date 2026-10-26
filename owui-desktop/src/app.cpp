@@ -1410,12 +1410,25 @@ void App::afterCompletion(const std::string& assistantId) {
 
   if (!message.error.empty()) {
     widgets::toastError(message.error);
-  } else if (settings().notifyOnCompletion && ImGui::GetIO().AppFocusLost) {
+  } else if (settings().notifyOnCompletion && !native::appIsActive()) {
+    // (ImGui's AppFocusLost is true for one frame only, so it is not "in the background".)
     // Only notify when the window is in the background; the notification's
     // reply field sends straight back into this chat.
     std::string preview = md::toPlainText(message.content);
     if (preview.size() > 180) preview = preview.substr(0, 180) + "...";
-    native::notifyWithReply(chat.title.empty() ? "Reply ready" : chat.title, preview, chat.id);
+    // A chat not titled yet goes by the start of what was asked.
+    std::string title = chat.title;
+    if (title.empty() || title == "New Chat") {
+      auto asked = chat.messages.find(message.parentId);
+      title = asked != chat.messages.end() ? core::trim(asked->second.content) : "";
+      if (title.size() > 48) {
+        size_t cut = 48;
+        while (cut > 0 && (static_cast<unsigned char>(title[cut]) & 0xC0) == 0x80) --cut;   // not mid-character
+        title = title.substr(0, cut) + "...";
+      }
+      if (title.empty()) title = "Reply ready";
+    }
+    notify(0, title, preview, chat.id);   // held during a Focus or a meeting (#125)
   }
   if (settings().speakReplies && !message.content.empty()) readAloud(assistantId, message.content);
 
@@ -1614,6 +1627,7 @@ void App::frame() {
     tickCamera();
     tickMeeting();
     tickWakeWord();
+    tickNotifications();
   }
   handleShortcuts();
 

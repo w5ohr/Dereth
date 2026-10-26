@@ -259,6 +259,10 @@ void App::drawSettingsPane() {
     }
   }, width);
 
+  widgets::sectionHeader("NOTIFICATIONS");
+  card("notifications", [&] { drawNotificationsSection(width); }, width);
+  ImGui::Dummy(ImVec2(0, 8));
+
   widgets::sectionHeader("MAC INTEGRATION");
   card("mac", [&] {
     bool hotkey = cfg.extra.value("globalHotkey", true);

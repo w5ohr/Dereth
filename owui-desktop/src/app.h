@@ -468,6 +468,10 @@ class App {
   void tickWakeWord();
   bool wakeTurnActive() const;
   void drawVoiceInputSection(float width);
+  // Focus-aware notifications (notifications.mm, #125). kind: 0 reply, 1 screen watch, 2 plugin.
+  void notify(int kind, const std::string& title, const std::string& body, const std::string& chatId);
+  void tickNotifications();
+  void drawNotificationsSection(float width);
   voice::Vad voiceVad_;
   int voiceTurns_ = 0;   // turns sent since voice mode began
   void drawScreenWatchSection(float width);

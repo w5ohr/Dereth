@@ -282,7 +282,7 @@ void App::tickScreenWatch() {
           // The question came true.
           const std::string line = "Screen watch: " + config.question + " - yes. " + check.verdict.note;
           widgets::toastInfo(line);
-          if (settings().extra.value("screenWatchNotify", false)) native::notifyWithReply("Screen watch", config.question + " - " + check.verdict.note, "");
+          if (settings().extra.value("screenWatchNotify", false)) notify(1, "Screen watch", config.question + " - " + check.verdict.note, "");
           if (config.stopWhenMet) stopScreenWatch("Done: " + check.verdict.note);
         });
       });

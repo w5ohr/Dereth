@@ -100,6 +100,11 @@ void removeChatFromSpotlight(const std::string& chatId);
 void clearSpotlightIndex();
 
 // Notifications. The "reply" category offers an inline text field.
+// Notification permission (#125): asked for only from Settings. The status
+// is cached (UNAuthorizationStatus; -1 until read) and refreshed on request.
+void refreshNotificationAuthorization();
+int notificationAuthorization();
+void requestNotificationAuthorization();
 void notifyWithReply(const std::string& title, const std::string& body,
                      const std::string& chatId);
 
@@ -119,6 +124,7 @@ void updateHandoff(const std::string& webUrl, const std::string& title);
 void clearHandoff();
 
 bool systemIsDark();
+bool appIsActive();   // this app is the frontmost one
 void setWindowTitle(const std::string& title);
 
 // Folder watching (FSEvents). Returns a token for stop().

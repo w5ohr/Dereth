@@ -2790,3 +2790,46 @@ while you talk". Not covered: the real microphone (its access prompt, and it wou
 record the room), the wake phrase (speech-recognition and microphone prompts), and voice
 conversation with the new detector in the GUI, since it reads the reply aloud through the
 speakers. The detector itself is covered by the self-test.
+
+2026-10-25 125 (focus-aware notifications): `core/notifypolicy`'s Policy decides what is
+held and what is delivered:
+- A Focus holds everything (respectFocus).
+- A meeting holds all but screen-watch alerts (batchInMeetings, urgentThroughMeetings).
+- Once free for 60 s it hands back a Digest when two or more are held (digest on), else
+  each held one. The wait restarts if the busy state comes back, since meetings flicker
+  the microphone.
+- `makeDigest` titles it "While your Focus was on" or "While you were in a meeting",
+  counts replies, screen watches and others, and names up to four chats once each.
+`notifications.mm` gathers the busy signals:
+- **Focus:** INFocusStatusCenter, when its access is allowed.
+- **Microphone:** in use by another app, through CoreAudio's
+  DeviceIsRunningSomewhere on the default input, not counting our own recording.
+- **Camera:** any camera in use, through CoreMediaIO's DeviceIsRunningSomewhere, not
+  counting our own camera sheet.
+- **Calendar:** an event now, when Calendar access was given for #89, checked each minute.
+None of these prompts. Every notification the app sends (finished replies, screen watch,
+plugins) now goes through `App::notify`. A behaviour change: `native::notifyWithReply` no
+longer asks for permission on first use. It posts only when notifications are allowed,
+and the Settings > Notifications card asks ("Allow notifications"), shows the Focus-status
+access (with "Allow Focus status"), the four options, "Now: free / busy - why", the held
+count with "Show what is held", the last digest with Open buttons, and recent decisions.
+NSFocusStatusUsageDescription was added, and Intents and CoreMediaIO are linked. A test
+hook, OWUI_FAKE_BUSY, takes "meeting", "focus" or a file holding one. Found and fixed on
+the way, both predating this item: the finished-reply notification checked ImGui's
+`io.AppFocusLost`, which is true for one frame only, so it effectively never fired. It now
+uses `NSApp.isActive`, and the warmup pane's "frontmost" test had the same bug, fixed the
+same way. A chat not titled yet now goes by the start of its prompt in notifications.
+`--notifytest` runs 14 checks: delivered when free, a reply held in a meeting, a screen
+watch let through, everything held in a Focus, both switched off, nothing out while busy
+or before the settle, the digest's title, counts and names, nothing left after, a
+flickering microphone restarting the wait, a single item delivered as itself, the digest
+off, a long digest, and a Focus title. It also reads this Mac's microphone, camera and
+Focus state without asking (free, free, unknown - not asked yet). Verified in the GUI
+against the scratch Open WebUI with OWUI_FAKE_BUSY pointing at a file holding "meeting":
+two prompts answered while Finder was in front ("apple", "Blue."), and the card showed
+"2 held" with both held lines. After changing the file to free, the card showed "Now: free"
+and, a minute later, the digest arrived as a toast and in the card: "While you were in a
+meeting: 2 replies finished: New Chat". That test predates the prompt-title change.
+Notifications were "not asked yet", so nothing was posted and nothing prompted. Not
+covered: a real Focus (its access prompt), real microphone or camera use by another app,
+the calendar check (Calendar access), and posted macOS notifications (their prompt).

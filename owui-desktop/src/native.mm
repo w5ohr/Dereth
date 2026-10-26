@@ -12,6 +12,7 @@
 #import <WebKit/WebKit.h>
 
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <map>
@@ -456,10 +457,30 @@ void clearSpotlightIndex() {
   [[CSSearchableIndex defaultSearchableIndex] deleteAllSearchableItemsWithCompletionHandler:nil];
 }
 
+namespace {
+std::atomic<int> gNotifyAuth{-1};   // UNAuthorizationStatus, -1 until first read
+}
+
+void refreshNotificationAuthorization() {
+  [[UNUserNotificationCenter currentNotificationCenter] getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings* s) {
+    gNotifyAuth = static_cast<int>(s.authorizationStatus);
+  }];
+}
+
+int notificationAuthorization() { return gNotifyAuth.load(); }
+
+void requestNotificationAuthorization() {
+  [[UNUserNotificationCenter currentNotificationCenter] requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
+                                                                      completionHandler:^(BOOL, NSError*) { refreshNotificationAuthorization(); }];
+}
+
+bool appIsActive() { return NSApp.isActive; }
+
 void notifyWithReply(const std::string& title, const std::string& body, const std::string& chatId) {
+  // Permission is asked for from Settings only (#125); without it nothing is posted.
+  const int auth = gNotifyAuth.load();
+  if (auth != UNAuthorizationStatusAuthorized && auth != UNAuthorizationStatusProvisional) return;
   UNUserNotificationCenter* center = [UNUserNotificationCenter currentNotificationCenter];
-  [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
-                        completionHandler:^(BOOL, NSError*) {}];
   UNMutableNotificationContent* content = [[UNMutableNotificationContent alloc] init];
   content.title = toNs(title);
   content.body = toNs(body);

@@ -48,7 +48,7 @@ void App::pluginsInit() {
   plugins::HostCallbacks cb;
   cb.toast = [](const std::string& text) { async::post([text] { widgets::toastInfo(text); }); };
   cb.notify = [](const std::string& title, const std::string& body) {
-    async::post([title, body] { native::notifyWithReply(title, body, ""); });
+    async::post([title, body] { App::instance().notify(2, title, body, ""); });
   };
   cb.insert = [this](const std::string& text) {
     async::post([this, text] {

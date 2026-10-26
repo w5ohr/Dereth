@@ -984,6 +984,15 @@ Things a browser tab can't do, plus the workflow features built on top:
   Then the question after it is sent, or the app listens for one.
   `Open WebUI --voicetest` covers the detector, the hold rules and the
   phrase matching.
+- **Focus-aware notifications:** under Settings > Notifications. While a
+  Focus is on, or you're in a meeting, finished-reply, screen-watch and
+  plugin notifications are held. A meeting means another app is using the
+  microphone or camera, or a calendar event is happening now. Once you've
+  been free for a minute, they arrive as one digest, such as "While you were
+  in a meeting: 2 replies finished: ...". Screen-watch alerts can still come
+  through during meetings. macOS asks for notification and Focus-status
+  access only from that card's buttons. `Open WebUI --notifytest` covers
+  what's held, the settle time and the digest.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.
