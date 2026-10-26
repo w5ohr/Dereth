@@ -9,6 +9,7 @@
 #import <Quartz/Quartz.h>
 #import <UserNotifications/UserNotifications.h>
 #import <Vision/Vision.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <WebKit/WebKit.h>
 
 #include <algorithm>

@@ -6,6 +6,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <Cocoa/Cocoa.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include <atomic>
 #include <ctime>
