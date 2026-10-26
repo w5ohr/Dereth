@@ -1610,6 +1610,7 @@ void App::frame() {
     tickOnboarding();
     tickCrashReporter();
     tickUpdater();
+    tickScreenWatch();
   }
   handleShortcuts();
 

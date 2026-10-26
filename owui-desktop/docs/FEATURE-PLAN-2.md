@@ -2642,3 +2642,40 @@ which need Full Disk Access, the layouts may differ from the fixtures. In partic
 Notes' group container may raise its own macOS prompt on recent versions, and very old
 Notes rows may not use the protobuf layout. Messages' typedstream decoding is a heuristic,
 so unusual rows fall back to the text column or are skipped.
+
+2026-10-25 112 (screen watch): `core/screenwatch` holds the logic. The prompt is a system
+rule (YES or NO alone on the first line, then one sentence) plus the question and either
+the window's text (its last 12,000 characters, since logs change at the end) or the
+screenshot as an image_url. `parseVerdict` takes the first word after any <think> block
+or markdown ("Yesterday" is not a yes). Fingerprints: text with digit runs and whitespace
+collapsed, so ticking clocks don't count as change, and a 64-bit difference hash of a 9x8
+thumbnail, within two bits counting as the same. The gate skips an unchanged window up to
+ten times, then asks again. `screen_watch.mm`: windows come from CGWindowListCopyWindowInfo
+(layer 0, 80x60 and up, own ones marked). Captures use ScreenCaptureKit (SCScreenshotManager)
+when Screen Recording is allowed. The app's own windows use the window server's copy,
+CGWindowListCreateImage, which the macOS 15+ SDK no longer declares, so it is looked up
+with dlsym. Text comes from Live Text (`native::recognizeText`). The model call is a
+non-streaming /api/chat/completions through the server, with the chosen model. A YES
+shows a toast (read aloud), an optional macOS notification (off by default, since it is
+the one place that asks for notification permission) and stops the watch. There is one
+watch at a time, ticked by the main window, with an interval of 10 to 600 s. Tools >
+Screen watch has the permission line with "Allow Screen Recording" and "Open its
+settings", the window list (others' windows are disabled without permission), the
+question, interval, mode (text / screenshot), model, Start/Stop, status and history. The
+palette has "Watch a window (screen watch)...". `--screenwatchtest` runs 15 checks: both
+prompt modes, the tail kept, the empty screen, verdicts (plain, bold, after thinking,
+unclear, "Yesterday"), fingerprints, the gate, history lines and interval limits. It also
+opens a red window of its own, finds it listed as its own, captures it (PNG plus
+thumbnail) and checks another app's window is refused without permission. On this machine
+Screen Recording was already allowed for this build, likely inherited from the Claude app
+that launched it, so other windows were listable. I watched only the app's own window.
+Verified in the GUI against a scratch Open WebUI with qwen3:8b in text mode. I opened the
+"Calendar Access" chat in its own window and, from the main window's Screen watch, asked
+"Does the window show the words BUILD FINISHED?" every 30 s. Two looks answered no ("does
+not contain the exact phrase"). After I typed BUILD FINISHED into that window's composer,
+the next look answered YES: Live Text read "BUILD FINISHEDI", with the caret as an I, and
+the model saw past it. The toast was announced and the status read "Done: ...". Not
+covered: screenshot mode with a real vision model (none on this Ollama, and pulling one is
+a download I did not make), and watching another app's window (permission and privacy).
+The caret's blink changes the recognised text, so a focused text field defeats the
+unchanged-window gate, as the second look showed.

@@ -20,7 +20,7 @@
 namespace app {
 namespace {
 
-enum class Tab { Command, BuildError, Benchmark, LocalIndex, Graph, Notebook, Transcribe, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Traffic, Evaluate, Health, Models };
+enum class Tab { Command, BuildError, Benchmark, LocalIndex, Graph, Notebook, Transcribe, ScreenWatch, FolderSync, UrlCapture, Mcp, Terminal, Plugins, Git, Usage, Backup, Recipes, TestLoop, Audit, Traffic, Evaluate, Health, Models };
 
 Tab gTab = Tab::Command;
 int gForceFrames = 0;   // frames left to hold a tab the palette asked for
@@ -65,6 +65,7 @@ const char* tabName(Tab tab) {
     case Tab::Graph: return "Graph";
     case Tab::Notebook: return "Notebook";
     case Tab::Transcribe: return "Transcribe";
+    case Tab::ScreenWatch: return "Screen watch";
     case Tab::Evaluate: return "Evaluate";
     case Tab::Health: return "Health";
     case Tab::Models: return "Models";
@@ -217,12 +218,13 @@ void App::drawToolsPane() {
   const auto& palette = theme::palette();
 
   if (ImGui::BeginTabBar("##toolstabs")) {
-    if (toolsTabRequest == "graph" || toolsTabRequest == "notebook" || toolsTabRequest == "transcribe") {
-      gTab = toolsTabRequest == "graph" ? Tab::Graph : toolsTabRequest == "notebook" ? Tab::Notebook : Tab::Transcribe;
+    if (toolsTabRequest == "graph" || toolsTabRequest == "notebook" || toolsTabRequest == "transcribe" || toolsTabRequest == "screenwatch") {
+      gTab = toolsTabRequest == "graph" ? Tab::Graph : toolsTabRequest == "notebook" ? Tab::Notebook
+                                                     : toolsTabRequest == "screenwatch" ? Tab::ScreenWatch : Tab::Transcribe;
       gForceFrames = 2;
       toolsTabRequest.clear();
     }
-    for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex, Tab::Graph, Tab::Notebook, Tab::Transcribe,
+    for (Tab tab : {Tab::Command, Tab::BuildError, Tab::Benchmark, Tab::LocalIndex, Tab::Graph, Tab::Notebook, Tab::Transcribe, Tab::ScreenWatch,
                     Tab::FolderSync, Tab::UrlCapture, Tab::Mcp, Tab::Terminal, Tab::Plugins, Tab::Git, Tab::Usage, Tab::Backup, Tab::Recipes, Tab::TestLoop, Tab::Audit, Tab::Traffic, Tab::Evaluate, Tab::Health, Tab::Models}) {
       if (ImGui::BeginTabItem(tabName(tab), nullptr, gForceFrames > 0 && gTab == tab ? ImGuiTabItemFlags_SetSelected : 0)) {
         if (gForceFrames == 0) gTab = tab;
@@ -612,6 +614,9 @@ void App::drawToolsPane() {
       break;
     case Tab::Transcribe:
       drawTranscribeSection(width);
+      break;
+    case Tab::ScreenWatch:
+      drawScreenWatchSection(width);
       break;
     case Tab::Evaluate:
       drawEvalSection(width);

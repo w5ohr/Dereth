@@ -440,6 +440,13 @@ class App {
   void drawMacToolsCard(float width);
   // Personal corpus (personal_corpus.mm, #106).
   void indexPersonalCorpus();
+  // Screen watch (screen_watch.mm, #112).
+  void startScreenWatch(uint32_t windowId, const std::string& label, bool own, const std::string& question, int intervalSec,
+                        bool image, const std::string& model);
+  void stopScreenWatch(const std::string& why);
+  bool screenWatchRunning() const;
+  void tickScreenWatch();
+  void drawScreenWatchSection(float width);
   void drawPersonalCorpusSection(float width);
   std::vector<agents::ToolSpec> corpusToolSpecs() const;
   std::string callCorpusTool(const Json& args, std::string* error);       // personal_tools.mm: Calendar / Reminders / Contacts / Mail tools (#89)   // browser_tool.cpp: the built-in browser tool's card in the MCP tab

@@ -358,6 +358,10 @@ void App::drawPalette() {
   add("Open this chat in a new window", "command", [this] { openChatInNewWindow(chat.id, false); });
   add("Open this chat in a new tab", "command", [this] { openChatInNewTab(chat.id); });
   add("New chat in a new tab", "command", [this] { openChatInNewTab(""); });
+  add("Watch a window (screen watch)...", "command", [this] {
+    pane = Pane::Tools;
+    toolsTabRequest = "screenwatch";
+  });
   add("Open this chat as a floating mini window", "command", [this] { openChatInNewWindow(chat.id, true); });
   add("Float this window on top", "command", [this] { toggleFloating(); });
   for (const layouts::Layout& l : layouts::all(settings().extra)) {

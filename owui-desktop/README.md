@@ -946,6 +946,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   Open WebUI, and nothing is read until you press Index now. Re-indexing
   embeds only what changed and drops what's gone. `Open WebUI --corpustest`
   checks the readers against a synthetic Library.
+- **Screen watch:** under Tools > Screen watch (or "Watch a window" in the
+  palette), pick a window and ask a standing question, such as "Has the build
+  finished?". Every 10 seconds to 10 minutes the window is captured. Either
+  its text, read with Live Text and sent to any model, or the screenshot,
+  sent to a vision model, goes to the model with the question. A YES gives a
+  toast, plus a macOS notification if you turn that on, and stops the watch.
+  An unchanged window isn't asked about again until a limit passes. Other
+  apps' windows need Screen Recording, and the app's own windows don't.
+  `Open WebUI --screenwatchtest` covers the prompt, verdicts, change
+  detection and a real capture of the test's own window.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.
