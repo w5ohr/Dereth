@@ -358,6 +358,10 @@ void App::drawPalette() {
   add("Open this chat in a new window", "command", [this] { openChatInNewWindow(chat.id, false); });
   add("Open this chat in a new tab", "command", [this] { openChatInNewTab(chat.id); });
   add("New chat in a new tab", "command", [this] { openChatInNewTab(""); });
+  add("Take a photo with the camera...", "command", [this] {
+    pane = Pane::Chat;
+    openCamera();
+  });
   add("Watch a window (screen watch)...", "command", [this] {
     pane = Pane::Tools;
     toolsTabRequest = "screenwatch";

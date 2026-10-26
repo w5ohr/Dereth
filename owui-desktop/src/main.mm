@@ -603,6 +603,13 @@ static void injectChord(ImGuiKey key, bool shift = false) {
   app::App::instance().captureScreenToChat(true);
 }
 
+- (void)takePhoto:(id)sender { KeyViewScope keyView;
+  (void)sender;
+  app::App& app = app::App::instance();
+  app.pane = app::Pane::Chat;
+  app.openCamera();
+}
+
 - (void)toggleFloating:(id)sender { KeyViewScope keyView;
   (void)sender;
   app::App::instance().toggleFloating();
@@ -738,6 +745,7 @@ static void buildMenuBar() {
     item.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     tagMenuItem("chat.newWindow", item);
     tagMenuItem("chat.newTab", [fileMenu addItemWithTitle:@"New Tab" action:@selector(newTab:) keyEquivalent:@"t"]);
+    [fileMenu addItemWithTitle:@"Take Photo..." action:@selector(takePhoto:) keyEquivalent:@""];
     [fileMenu addItemWithTitle:@"Open Chat as Floating Mini Window" action:@selector(openMiniWindow:) keyEquivalent:@""];
   }
   {
@@ -892,6 +900,7 @@ int runWindowsSelfTest();
 int runPersonalSelfTest();
 int runCorpusSelfTest();
 int runScreenWatchSelfTest();
+int runCameraSelfTest();
 int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
@@ -965,6 +974,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--personaltest") return runPersonalSelfTest();
     if (std::string(argv[i]) == "--corpustest") return runCorpusSelfTest();
     if (std::string(argv[i]) == "--screenwatchtest") return runScreenWatchSelfTest();
+    if (std::string(argv[i]) == "--cameratest") return runCameraSelfTest();
     if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.

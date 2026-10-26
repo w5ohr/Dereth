@@ -956,6 +956,14 @@ Things a browser tab can't do, plus the workflow features built on top:
   apps' windows need Screen Recording, and the app's own windows don't.
   `Open WebUI --screenwatchtest` covers the prompt, verdicts, change
   detection and a real capture of the test's own window.
+- **Camera:** File > Take Photo..., or "Take a photo" in the palette, opens a
+  camera sheet. It shows a live preview from the Mac's camera, an external
+  one, or an iPhone through Continuity Camera, listed first when it's near.
+  Take a photo, then attach it to the message for a vision model, or retake
+  it. Photos go out upright at most 1568 pixels on the long side. The camera
+  runs only while the sheet is open, and macOS asks for access from the
+  sheet's Allow button. `Open WebUI --cameratest` covers device choice and
+  the image pipeline on synthetic frames, without opening a camera.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

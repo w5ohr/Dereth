@@ -2679,3 +2679,29 @@ covered: screenshot mode with a real vision model (none on this Ollama, and pull
 a download I did not make), and watching another app's window (permission and privacy).
 The caret's blink changes the recognised text, so a focused text field defeats the
 unchanged-window gate, as the second look showed.
+
+2026-10-25 113 (camera capture): `core/camera` holds the parts with no system calls. It
+sets each device's kind from its AVFoundation type and orders them Continuity, built in,
+external, then Desk View. It picks the saved device (extra["cameraDevice"]) or the first,
+fits a photo to at most 1568 pixels on the long side, and names photos
+photo-YYYY-MM-DD-HHMMSS.jpg. `camera.mm`: devices come from an AVCaptureDeviceDiscoverySession
+(built in, external, Continuity, Desk View). `isContinuityCamera` marks an iPhone, which
+on this macOS arrives typed as external. Only faces-you cameras are mirrored in the
+preview. While the sheet is open, an AVCaptureSession runs a BGRA video output, throttled
+to about 8 frames a second, as 720-wide preview JPEGs via Core Image, through the image
+cache. It also runs an AVCapturePhotoOutput: a JPEG photo re-encoded upright through
+ImageIO's thumbnailer, which honours EXIF orientation. The sheet has a device picker,
+the preview, Take photo, then Attach to message or Retake, and Close. A tick stops the
+session (and the camera light) within a second of no window showing the sheet. Access is
+requested only from the sheet's "Allow camera access" button. When denied, it offers the
+Camera privacy pane. Entry points: File > Take Photo... and the palette. NSCameraUsageDescription
+was added, and CoreImage, CoreMedia and CoreVideo are linked. `--cameratest` runs 8 checks:
+kinds, ordering, choice, sizes, names, a synthetic 1280x720 frame becoming a 720x405
+preview with its colour kept, and a 4000x3000 EXIF-6 photo coming out upright at
+1176x1568. It also lists this Mac's cameras and reads the access status without opening
+either. Here that was an iPhone through Continuity, FaceTime HD and Desk View, with access
+not asked yet. Verified in the GUI: the palette's "Take a photo" opened the sheet showing
+"Camera access has not been asked for yet." with the Allow button, an empty preview and a
+disabled Take photo, and Close closed it. No camera session starts before access. Not
+covered: a live preview and a real photo. Both need the access prompt, and the camera
+would photograph the room, so neither was started.

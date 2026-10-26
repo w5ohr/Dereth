@@ -1611,6 +1611,7 @@ void App::frame() {
     tickCrashReporter();
     tickUpdater();
     tickScreenWatch();
+    tickCamera();
   }
   handleShortcuts();
 
@@ -1618,7 +1619,7 @@ void App::frame() {
   // only shows while the chat pane placed it last frame and nothing modal is
   // open over the window.
   {
-    const bool overlay = showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet || showTour || showWhatsNew || showCrashSheet || showImageEditor ||
+    const bool overlay = showCamera || showPalette || showQuickAsk || showContextInspector || showCitation || showPlayground || showCheatSheet || showTour || showWhatsNew || showCrashSheet || showImageEditor ||
                          showProjectFiles ||
                          ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     native::composerSetVisible(composerShownThisFrame && !overlay);
@@ -1795,6 +1796,7 @@ void App::frame() {
     drawRedactionSheet();
     drawCitationPopup();
     drawProjectFilesPopup();
+    drawCameraSheet();
   } else if (signedIn_) {
     drawModelCompare();
     drawPalette();
@@ -1816,6 +1818,7 @@ void App::frame() {
     pluginsTick();
     drawCitationPopup();
     drawProjectFilesPopup();
+    drawCameraSheet();
   }
   if (!secondary) {
     drawCrashSheet();   // on every screen: a crash at start-up leaves you at sign-in

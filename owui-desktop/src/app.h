@@ -288,7 +288,8 @@ struct ViewState;
   X(artifacts) X(showArtifacts) X(artifactIndex) X(artifactEdit) X(artifactEditing) X(artifactsKey_)      \
   X(showDocument) X(showFanoutPicker) X(startChatId) X(floating) X(miniWindow) X(selectedMessages)        \
   X(selectionMode) X(structuredHints) X(showQuickAsk) X(quickAskInput) X(quickAskChatId)                 \
-  X(composerSynced_) X(composerSyncedGeneration_) X(titleEdit_) X(editingTitle_) X(showToolPicker_)
+  X(composerSynced_) X(composerSyncedGeneration_) X(titleEdit_) X(editingTitle_) X(showToolPicker_)       \
+  X(showCamera)
 
 class App {
   friend struct ViewState;
@@ -446,6 +447,11 @@ class App {
   void stopScreenWatch(const std::string& why);
   bool screenWatchRunning() const;
   void tickScreenWatch();
+  // Camera (camera.mm, #113).
+  bool showCamera = false;
+  void openCamera();
+  void tickCamera();
+  void drawCameraSheet();
   void drawScreenWatchSection(float width);
   void drawPersonalCorpusSection(float width);
   std::vector<agents::ToolSpec> corpusToolSpecs() const;
