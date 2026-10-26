@@ -1612,6 +1612,7 @@ void App::frame() {
     tickUpdater();
     tickScreenWatch();
     tickCamera();
+    tickMeeting();
   }
   handleShortcuts();
 

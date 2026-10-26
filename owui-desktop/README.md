@@ -964,6 +964,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   runs only while the sheet is open, and macOS asks for access from the
   sheet's Allow button. `Open WebUI --cameratest` covers device choice and
   the image pipeline on synthetic frames, without opening a camera.
+- **Meeting notes:** Tools > Meeting notes, or the palette, takes what your
+  Mac plays, such as a call, webinar or video. Your microphone can be added
+  if you like. Recordings work too. Speech goes to your Open WebUI server's
+  speech-to-text in pieces cut at pauses. You get a live, timestamped
+  transcript, and every couple of minutes the model updates the notes: a
+  summary, decisions and action items. Stopping writes the final notes.
+  "Copy as Markdown" copies everything, and "Save as a note" puts it in the
+  Notes pane. System audio needs Screen Recording, and the app's own sound
+  is left out. `Open WebUI --meetingtest` covers the resampling, the pause
+  cutting and the notes.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

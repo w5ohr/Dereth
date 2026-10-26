@@ -2705,3 +2705,46 @@ not asked yet. Verified in the GUI: the palette's "Take a photo" opened the shee
 disabled Take photo, and Close closed it. No camera session starts before access. Not
 covered: a live preview and a real photo. Both need the access prompt, and the camera
 would photograph the room, so neither was started.
+
+2026-10-25 115 (meeting notes): `core/meeting` holds the logic:
+- **Resampler:** streaming, any rate and channel count to 16 kHz mono, averaging each
+  output's span when decimating.
+- **Chunker:** waits for 15 s, then cuts at the quietest 300 ms window once one is a pause
+  (RMS under 0.01). It never keeps a chunk past 30 s, and drops silent chunks (no 100 ms
+  window above -45 dBFS).
+- **Notes:** the prompt has three fixed headings (Summary, Decisions, Action items as
+  "- [ ] who: what (when)"), keeps what still holds, and carries the newest 24,000
+  characters of transcript plus the previous notes. `parseNotes` accepts #, bold or bare
+  headings, bullets, numbered lists and checkboxes, and skips placeholders. All
+  placeholders leave the old notes in place.
+- **Document:** the saved Markdown, as title, date and length, notes, then the timed
+  transcript.
+Transcript lines, WAV encoding and clocks are #114's.
+`meeting_notes.mm`: system audio comes from an SCStream on the first display with
+capturesAudio, 48 kHz stereo, and excludesCurrentProcessAudio so the app's own read-aloud
+is left out. Video is cut to 2x2 at 1 fps. Planar or interleaved float buffers are mixed to
+mono and resampled. The microphone is optional, through an AVAudioEngine tap, mixed in by
+arrival. A recording goes through `transcript::decodeAudio` and `segment` (#114) into the
+same queue. Chunks are transcribed one at a time through the server's
+/api/v1/audio/transcriptions, so lines stay in order. Notes refresh every 2 minutes once
+there are 300 new characters. After Stop, or the last part of a recording, the queue
+drains and the final notes are written. The Tools > Meeting notes tab and the palette's
+"Meeting notes..." have the title, source (system audio / a recording), notes model, the
+Screen Recording line, the microphone option, Start/Stop with elapsed time, status, the
+notes with "Update notes now", "Copy as Markdown" and "Save as a note" (createNote), and the
+transcript. `--meetingtest` runs 17 checks: the resampler on 48 kHz stereo and 44.1 kHz,
+fed whole and in odd pieces, keeps length and pitch; the chunker waits, cuts inside a
+1 s pause at 18.15 s, caps at 30 s, continues from there, and drops silence and room hum;
+the prompt carries what it should; parseNotes handles varied formatting; the Markdown
+round trip; the document; notesDue. Verified in the GUI against a freshly recreated
+scratch Open WebUI, after Docker had restarted and stopped the old one, with its built-in
+Whisper base and qwen3:8b. A 25.6 s synthetic meeting made with `say -o` (written to a
+file, never played) was chosen through the open panel. It became 6 timed transcript lines,
+from "0:00 Okay, let's start the weekly sync." to "0:23 That's everything, thanks all!".
+The final notes had a summary, two decisions (one, "keep Q1 budget review status as is",
+is the model's stretch) and two action items: "Anna: Send updated slide deck (Friday)" and
+"Ben: Book large meeting room for offsite (next month)". "Save as a note" created the note
+on the server (945 characters). Not covered: live capture of system audio and the
+microphone. It would record whatever this Mac is playing, possibly a real call, and the
+microphone needs its access prompt, so neither was started. The Screen Recording
+permission it needs was already in place for this build.

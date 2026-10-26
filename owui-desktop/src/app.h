@@ -452,6 +452,13 @@ class App {
   void openCamera();
   void tickCamera();
   void drawCameraSheet();
+  // Meeting notes (meeting_notes.mm, #115).
+  void startMeetingCapture(const std::string& title, bool withMic);
+  void stopMeetingCapture();
+  void transcribeMeetingFile(const std::string& path, const std::string& title);
+  void updateMeetingNotes(bool final);
+  void tickMeeting();
+  void drawMeetingSection(float width);
   void drawScreenWatchSection(float width);
   void drawPersonalCorpusSection(float width);
   std::vector<agents::ToolSpec> corpusToolSpecs() const;

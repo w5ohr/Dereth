@@ -362,6 +362,10 @@ void App::drawPalette() {
     pane = Pane::Chat;
     openCamera();
   });
+  add("Meeting notes...", "command", [this] {
+    pane = Pane::Tools;
+    toolsTabRequest = "meeting";
+  });
   add("Watch a window (screen watch)...", "command", [this] {
     pane = Pane::Tools;
     toolsTabRequest = "screenwatch";
