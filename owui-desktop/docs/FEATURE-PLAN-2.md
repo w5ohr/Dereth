@@ -2597,3 +2597,48 @@ and the Mail draft window, all of which need the access prompts or a Mail accoun
 is signed ad hoc, so macOS may ask again after each rebuild until #128 gives it a stable
 identity. A one-line tool result sits behind the result box's horizontal scrollbar, an
 existing display issue.
+
+2026-10-25 106 (personal corpus): `core/corpus` reads four sources from a Library folder
+it is given ($HOME/Library in the app, so a scratch HOME means a scratch Library):
+- **Notes:** NoteStore.sqlite opened read-only and immutable, columns found by PRAGMA
+  (ZTITLE1/ZTITLE...), locked and deleted notes skipped. Each note body is gunzipped and
+  walked as protobuf (document 2 > note 3 > text 2), with attachment marks removed.
+- **Mail:** .emlx files under Mail/, newest first within a day window, with Junk, Trash
+  and Spam skipped. A full RFC 822 and MIME reader handles folded headers, encoded words
+  (B and Q, adjacent words joined), nested multipart, base64 and quoted-printable,
+  Latin-1 and cp1252 to UTF-8, text/plain preferred, and HTML to text otherwise.
+- **Reading List:** from Bookmarks.plist (NSPropertyListSerialization to JSON): title,
+  URL, preview text and date added.
+- **Messages:** chat.db read-only with handle, chat and join tables. Text falls back to
+  the attributedBody typedstream (one-, two- and four-byte lengths). Messages become one
+  document per conversation per day, in time order, "me" or the sender.
+A file macOS refuses (EPERM or EACCES) gives "needs Full Disk Access" plus a button to
+that settings pane. The index is personal-corpus.db: the local file index's machinery
+(chunking, nomic-embed-text, hybrid BM25 plus vector search) generalised to take a path
+(`searchIndexFile`, `indexDocument`, `indexedPaths`), with a docs table for source,
+title, sender and date. Re-indexing re-embeds only documents whose date changed. It drops
+documents a source that answered no longer has, and everything from sources switched
+off. A source that failed is left alone. The model gets corpus__search (query, optional
+source and limit) when "Let the model search it" is on. Results read "[source] title -
+from sender (date)" and then the passage. Section under Tools > Local index: sources,
+day windows, Index now and Stop, Delete the index, per-source results, and a search box.
+`--corpustest` runs 18 checks on a synthetic Library built in a temp folder: the gzipped
+protobuf, locked and deleted notes, quoted-printable, encoded words, cp1252, RFC 2822
+dates with zones, HTML to text, a multipart message, Mail's window and Junk, a real binary
+Safari plist, Apple time in seconds and nanoseconds, typedstreams short and long,
+Messages grouping and the archived-text row, a missing source, and a chmod-000 file
+pointing at Full Disk Access. Two fixture byte counts in the test were wrong at first, and
+a check that passed only by accident was tightened. Verified in the GUI with a synthetic
+Library in the scratch HOME (`make_library.py`: a note, two mails, a reading-list item,
+three messages, one only in attributedBody). Index now read 5 items and embedded them in
+0.4 s, and each source reported its count. The card's search for "when does the bakery
+close" ranked the Messages day first, including the archived-text line ("They close at
+4pm"). In a chat with tools on, "What is the combination for the blue bike lock at the
+office? Search my personal corpus." made qwen3:8b call corpus__search, and it answered
+"4-7-1-9", from the synthetic note only. Also: the source checkboxes are now "Index
+Notes" etc., because "Notes" matched the rail's Notes tab for VoiceOver too, and titles
+are no longer repeated in the passages. Not covered: real data. On this Mac's real files,
+which need Full Disk Access, the layouts may differ from the fixtures. In particular,
+Notes' group container may raise its own macOS prompt on recent versions, and very old
+Notes rows may not use the protobuf layout. Messages' typedstream decoding is a heuristic,
+so unusual rows fall back to the text column or are skipped.

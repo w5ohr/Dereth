@@ -233,6 +233,7 @@ std::vector<agents::ToolSpec> App::mcpToolSpecs() const {
   }
   // Calendar, Reminders, Contacts, Mail (#89): only the kinds switched on.
   for (const agents::ToolSpec& spec : personal::specs(personal::optionsFromSettings())) out.push_back(spec);
+  for (const agents::ToolSpec& spec : corpusToolSpecs()) out.push_back(spec);   // personal corpus (#106)
   for (const agents::ToolSpec& spec : scriptToolSpecs()) out.push_back(spec);
   // Plugin tools sit beside the MCP ones; their "server" is the plugin.
   for (const plugins::Tool& tool : plugins::Host::instance().tools()) {
@@ -493,6 +494,17 @@ agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
       const double started = core::nowMillis();
       std::string error;
       out.text = browsertool::call(spec->second.tool, call.args, browsertool::optionsFromSettings(), &error);
+      out.durationMs = core::nowMillis() - started;
+      if (!error.empty()) {
+        out.isError = true;
+        out.text = error;
+      }
+      return out;
+    }
+    if (spec->second.serverId == "builtin:corpus") {
+      const double started = core::nowMillis();
+      std::string error;
+      out.text = callCorpusTool(call.args, &error);
       out.durationMs = core::nowMillis() - started;
       if (!error.empty()) {
         out.isError = true;

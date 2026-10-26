@@ -936,6 +936,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   is missing, the model is told where to grant it. Every call still goes
   through the approval card. `Open WebUI --personaltest` covers the tools on a
   fake calendar and contact list.
+- **Personal corpus:** an opt-in index of your Notes, Mail (the last year by
+  default), Safari Reading List and Messages (the last 180 days by default),
+  under Tools > Local index. It's embedded with nomic-embed-text on your
+  Ollama, stored in the app's folder and never uploaded. Messages are indexed
+  one conversation-day at a time, and junk and trash are skipped. The model
+  can search it with the corpus__search tool. The passages it finds go to the
+  model you're chatting with. Reading these files needs Full Disk Access for
+  Open WebUI, and nothing is read until you press Index now. Re-indexing
+  embeds only what changed and drops what's gone. `Open WebUI --corpustest`
+  checks the readers against a synthetic Library.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

@@ -437,7 +437,12 @@ class App {
   int mcpConnectedCount() const;
   std::vector<agents::ToolSpec> mcpToolSpecs() const;
   void drawBrowserToolCard(float width);
-  void drawMacToolsCard(float width);       // personal_tools.mm: Calendar / Reminders / Contacts / Mail tools (#89)   // browser_tool.cpp: the built-in browser tool's card in the MCP tab
+  void drawMacToolsCard(float width);
+  // Personal corpus (personal_corpus.mm, #106).
+  void indexPersonalCorpus();
+  void drawPersonalCorpusSection(float width);
+  std::vector<agents::ToolSpec> corpusToolSpecs() const;
+  std::string callCorpusTool(const Json& args, std::string* error);       // personal_tools.mm: Calendar / Reminders / Contacts / Mail tools (#89)   // browser_tool.cpp: the built-in browser tool's card in the MCP tab
   // script_tools.cpp: the user's scripts in support/scripts as a built-in tool server.
   std::vector<agents::ToolSpec> scriptToolSpecs() const;
   static bool isScriptToolServer(const std::string& serverId);

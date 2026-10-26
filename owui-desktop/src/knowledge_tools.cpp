@@ -777,8 +777,8 @@ std::string indexPath() { return core::supportDir() + "/local-index.db"; }
 
 struct IndexDb {
   sqlite3* db = nullptr;
-  IndexDb() {
-    if (sqlite3_open(indexPath().c_str(), &db) != SQLITE_OK) {
+  explicit IndexDb(const std::string& path = indexPath()) {
+    if (sqlite3_open(path.c_str(), &db) != SQLITE_OK) {
       sqlite3_close(db);
       db = nullptr;
       return;
@@ -909,12 +909,12 @@ bool hybridEnabled() { return core::Settings::instance().extra.value("hybridSear
 // on, an FTS5/BM25 search runs beside it and the two lists are fused by
 // reciprocal rank; when the embedder is unreachable the text search alone
 // still answers.
-std::vector<Hit> searchIndex(const std::string& query, int k, std::string* error) {
+std::vector<Hit> searchIndex(const std::string& query, int k, std::string* error, const std::string& dbPath = indexPath()) {
   std::vector<Hit> hits;
   if (core::trim(query).empty() || k <= 0) return hits;
-  IndexDb db;
+  IndexDb db(dbPath);
   if (!db) {
-    *error = "cannot open " + indexPath();
+    *error = "cannot open " + dbPath;
     return hits;
   }
   const bool hybridOn = hybridEnabled();
@@ -1563,6 +1563,82 @@ bool embedTexts(const std::vector<std::string>& inputs, std::vector<std::vector<
 }
 
 std::string embedModelName() { return kEmbedModel; }
+
+// ---- the same index, for other stores (the personal corpus, #106) ----------
+
+std::vector<std::string> chunkForIndex(const std::string& text) { return chunkText(text); }
+
+std::vector<IndexHit> searchIndexFile(const std::string& dbPath, const std::string& query, int k, std::string* error) {
+  std::vector<IndexHit> out;
+  std::string err;
+  for (Hit& hit : searchIndex(query, k, &err, dbPath)) out.push_back({std::move(hit.path), std::move(hit.text), hit.score});
+  if (error) *error = err;
+  return out;
+}
+
+std::map<std::string, int64_t> indexedPaths(const std::string& dbPath) {
+  std::map<std::string, int64_t> out;
+  IndexDb db(dbPath);
+  if (!db) return out;
+  Statement st(db.db, "SELECT path, MIN(mtime) FROM chunks GROUP BY path");
+  while (st && sqlite3_step(st.stmt) == SQLITE_ROW) out[columnText(st.stmt, 0)] = sqlite3_column_int64(st.stmt, 1);
+  return out;
+}
+
+int indexedChunkCount(const std::string& dbPath) {
+  IndexDb db(dbPath);
+  if (!db) return 0;
+  Statement st(db.db, "SELECT COUNT(*) FROM chunks");
+  return st && sqlite3_step(st.stmt) == SQLITE_ROW ? sqlite3_column_int(st.stmt, 0) : 0;
+}
+
+bool removeIndexed(const std::string& dbPath, const std::string& path) {
+  IndexDb db(dbPath);
+  if (!db) return false;
+  Statement del(db.db, "DELETE FROM chunks WHERE path = ?");
+  sqlite3_bind_text(del.stmt, 1, path.c_str(), -1, SQLITE_TRANSIENT);
+  return sqlite3_step(del.stmt) == SQLITE_DONE;
+}
+
+bool indexDocument(const std::string& dbPath, const std::string& path, int64_t mtime, const std::string& embedPrefix,
+                   const std::vector<std::string>& chunks, std::string* error) {
+  std::vector<std::vector<float>> vectors;
+  const std::string base = ollamaBase();
+  for (size_t b = 0; b < chunks.size(); b += kEmbedBatch) {
+    std::vector<std::string> inputs;
+    for (size_t c = b; c < std::min(chunks.size(), b + kEmbedBatch); ++c) inputs.push_back("search_document: " + embedPrefix + "\n" + chunks[c]);
+    std::vector<std::vector<float>> batch;
+    if (!embed(base, inputs, &batch, error)) return false;
+    for (auto& v : batch) vectors.push_back(std::move(v));
+  }
+  if (vectors.size() != chunks.size()) {
+    *error = "the embedder returned " + std::to_string(vectors.size()) + " vectors for " + std::to_string(chunks.size()) + " chunks";
+    return false;
+  }
+  IndexDb db(dbPath);
+  if (!db) {
+    *error = "cannot open " + dbPath;
+    return false;
+  }
+  db.exec("BEGIN");
+  {
+    Statement del(db.db, "DELETE FROM chunks WHERE path = ?");
+    sqlite3_bind_text(del.stmt, 1, path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(del.stmt);
+    Statement ins(db.db, "INSERT INTO chunks(path, chunk, text, mtime, vector) VALUES(?,?,?,?,?)");
+    for (size_t c = 0; c < chunks.size(); ++c) {
+      sqlite3_bind_text(ins.stmt, 1, path.c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_bind_int(ins.stmt, 2, static_cast<int>(c));
+      sqlite3_bind_text(ins.stmt, 3, chunks[c].c_str(), -1, SQLITE_TRANSIENT);
+      sqlite3_bind_int64(ins.stmt, 4, mtime);
+      sqlite3_bind_blob(ins.stmt, 5, vectors[c].data(), static_cast<int>(vectors[c].size() * sizeof(float)), SQLITE_TRANSIENT);
+      sqlite3_step(ins.stmt);
+      sqlite3_reset(ins.stmt);
+    }
+  }
+  db.exec("COMMIT");
+  return true;
+}
 
 std::string htmlToMarkdownText(const std::string& html, const std::string& baseUrl, std::string* title) {
   std::string t;

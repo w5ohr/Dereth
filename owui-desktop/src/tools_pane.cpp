@@ -487,6 +487,8 @@ void App::drawToolsPane() {
 
     case Tab::LocalIndex: {
       drawLocalIndexSection(width);
+      ImGui::Dummy(ImVec2(0, 12));
+      drawPersonalCorpusSection(width);
       drawChatIndexCard(width);
       break;
     }

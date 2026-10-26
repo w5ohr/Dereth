@@ -890,6 +890,7 @@ int runFadeSelfTest();
 int runVoiceOverSelfTest();
 int runWindowsSelfTest();
 int runPersonalSelfTest();
+int runCorpusSelfTest();
 int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
@@ -961,6 +962,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--voiceovertest") return runVoiceOverSelfTest();
     if (std::string(argv[i]) == "--windowstest") return runWindowsSelfTest();
     if (std::string(argv[i]) == "--personaltest") return runPersonalSelfTest();
+    if (std::string(argv[i]) == "--corpustest") return runCorpusSelfTest();
     if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.
