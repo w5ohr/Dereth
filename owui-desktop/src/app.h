@@ -14,6 +14,7 @@
 #include "core/accessibility.h"
 #include "core/crashreport.h"
 #include "core/a11y.h"
+#include "core/automode.h"
 #include "core/fade.h"
 #include "core/voice.h"
 #include "core/imagemeta.h"
@@ -142,6 +143,7 @@ struct ToolCall {
   bool isError = false;
   int state = 0;                // agents::CallState
   int decision = 0;             // agents::Decision once the user has answered
+  std::string autoNote;         // auto mode's verdict and reason, for the card
   double durationMs = 0.0;
   double startedMs = 0.0;
   bool expanded = false;
@@ -1220,10 +1222,24 @@ class App {
   void drawAgentCard(Message& message, float width);
   void drawAgentPopover();                    // the "##agentopts" popup body
   agents::LoopConfig baseToolConfig(const std::string& model);
+  // How tool calls are approved for one reply, read on the main thread before
+  // the loop starts (auto mode, #auto).
+  struct ApprovalConfig {
+    automode::Mode mode = automode::Mode::Ask;
+    bool blockRisky = false;          // auto mode: block what it finds risky (else ask)
+    std::string judgeModel;           // the judge's model ("" = the reply's model)
+    std::string userRequest;          // the user's last message
+    std::string projectFolder;
+    bool judgeAllowed = true;         // private chats never send anything to the server: rules only
+  };
+  ApprovalConfig approvalConfigFor(const Json& messages, const std::string& model) const;
+  automode::Mode approvalMode() const;
+  void setApprovalMode(automode::Mode mode);
+  void drawApprovalModeControls(float width);
   agents::LoopHooks makeToolHooks(const std::shared_ptr<Stream>& stream,
                                   const std::map<std::string, std::shared_ptr<mcp::Client>>& clients,
                                   const std::map<std::string, agents::ToolSpec>& byName,
-                                  bool autoApprove, const Json& approvals);
+                                  const ApprovalConfig& approval, const Json& approvals);
   bool composerShownThisFrame = false;        // set by the chat pane when the native composer is placed
   // Per window (#121): what the native composer was last synced to, the title
   // being renamed, and the tool picker.

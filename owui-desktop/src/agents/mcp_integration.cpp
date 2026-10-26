@@ -21,6 +21,7 @@
 #include "pane_common.h"
 #include "platform.h"
 #include "ui/a11y_imgui.h"
+#include "core/automode.h"
 #include "ui/icons.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -150,6 +151,61 @@ const char* stateLabel(int state) {
 
 }  // namespace
 
+// ---------------------------------------------------------------- approval mode
+
+automode::Mode App::approvalMode() const {
+  const Json& extra = core::Settings::instance().extra;
+  if (extra.contains("mcpApprovalMode")) return automode::modeFrom(extra.value("mcpApprovalMode", "ask"));
+  return extra.value("mcpAutoApprove", false) ? automode::Mode::All : automode::Mode::Ask;
+}
+
+void App::setApprovalMode(automode::Mode mode) {
+  settings().extra["mcpApprovalMode"] = automode::modeName(mode);
+  settings().extra["mcpAutoApprove"] = mode == automode::Mode::All;   // older builds read this one
+  settings().save();
+  widgets::toastInfo(std::string("Tool calls: ") + automode::modeLabel(mode));
+}
+
+void App::drawApprovalModeControls(float width) {
+  const automode::Mode mode = approvalMode();
+  widgets::dimText("%s", "When a reply wants to call a tool:");
+  for (automode::Mode m : {automode::Mode::Ask, automode::Mode::Auto, automode::Mode::All}) {
+    if (ImGui::RadioButton(automode::modeLabel(m), mode == m) && mode != m) setApprovalMode(m);
+    a11y::ui::markLastItem(mode == m);
+    if (m != automode::Mode::All) ImGui::SameLine();
+  }
+  if (mode == automode::Mode::Auto) {
+    ImGui::Indent(18.0f);
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + std::max(200.0f, width - 60.0f));
+    widgets::dimText("%s", "Calls that only read run. Clearly destructive ones - deleting, rm -rf, sudo, writing outside the project, "
+                           "or a server's destructive tool - and calls that do not fit what you asked for wait for you. The rest "
+                           "go to a short check by a model (the judge), which weighs the call against your own request, so a web "
+                           "page or tool result cannot talk the assistant into something. Each card says what auto mode decided.");
+    ImGui::PopTextWrapPos();
+    bool block = settings().extra.value("autoModeBlockRisky", false);
+    if (ImGui::Checkbox("Block risky calls outright instead of asking", &block)) {
+      settings().extra["autoModeBlockRisky"] = block;
+      settings().save();
+    }
+    std::string judge = settings().extra.value("autoModeJudgeModel", std::string());
+    ImGui::SetNextItemWidth(320.0f);
+    if (ImGui::BeginCombo("Judge model", judge.empty() ? "the reply's own model" : judge.c_str())) {
+      if (ImGui::Selectable("the reply's own model", judge.empty())) {
+        settings().extra["autoModeJudgeModel"] = "";
+        settings().save();
+      }
+      for (const ModelInfo& m : models) {
+        if (ImGui::Selectable(m.id.c_str(), m.id == judge)) {
+          settings().extra["autoModeJudgeModel"] = m.id;
+          settings().save();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::Unindent(18.0f);
+  }
+}
+
 // ---------------------------------------------------------------- ToolCall
 
 Json ToolCall::toJson() const {
@@ -157,6 +213,7 @@ Json ToolCall::toJson() const {
          {"args", args},   {"isError", isError},     {"state", state},   {"durationMs", durationMs}};
   j["result"] = result.size() > 100000 ? result.substr(0, 100000) + "\n...[truncated]" : result;
   if (!error.empty()) j["error"] = error;
+  if (!autoNote.empty()) j["autoNote"] = autoNote;
   return j;
 }
 
@@ -173,6 +230,7 @@ ToolCall ToolCall::fromJson(const Json& j) {
   t.isError = j.value("isError", false);
   t.state = j.value("state", static_cast<int>(agents::Done));
   t.durationMs = j.value("durationMs", 0.0);
+  t.autoNote = j.value("autoNote", "");
   return t;
 }
 
@@ -224,6 +282,7 @@ std::vector<agents::ToolSpec> App::mcpToolSpecs() const {
       spec.serverId = id;
       spec.serverName = serverName;
       spec.tool = tool.name;
+      spec.annotations = tool.annotations;
       out.push_back(spec);
     }
   }
@@ -413,10 +472,37 @@ agents::LoopConfig App::baseToolConfig(const std::string& model) {
 
 // Approval, invocation and progress hooks shared by every loop that runs
 // MCP tools for a stream (the tool loop and the agent loop).
+App::ApprovalConfig App::approvalConfigFor(const Json& messages, const std::string& model) const {
+  const Json& extra = core::Settings::instance().extra;
+  ApprovalConfig c;
+  // Older settings had one switch; it maps to "approve everything".
+  c.mode = extra.contains("mcpApprovalMode") ? automode::modeFrom(extra.value("mcpApprovalMode", "ask"))
+                                             : (extra.value("mcpAutoApprove", false) ? automode::Mode::All : automode::Mode::Ask);
+  c.blockRisky = extra.value("autoModeBlockRisky", false);
+  c.judgeModel = extra.value("autoModeJudgeModel", std::string());
+  if (c.judgeModel.empty()) c.judgeModel = model;
+  c.projectFolder = projectFolder;
+  // The user's own last words are what the judge measures a call against.
+  if (messages.is_array()) {
+    for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+      if (!it->is_object() || it->value("role", "") != "user") continue;
+      const Json& content = (*it)["content"];
+      if (content.is_string()) c.userRequest = content.get<std::string>();
+      else if (content.is_array()) {
+        for (const auto& part : content) {
+          if (part.is_object() && part.value("type", "") == "text") c.userRequest += part.value("text", "");
+        }
+      }
+      break;
+    }
+  }
+  return c;
+}
+
 agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
                                      const std::map<std::string, std::shared_ptr<mcp::Client>>& clients,
                                      const std::map<std::string, agents::ToolSpec>& byName,
-                                     bool autoApprove, const Json& approvals) {
+                                     const ApprovalConfig& approval, const Json& approvals) {
   agents::LoopHooks hooks;
   hooks.onCallState = [stream, byName](const agents::Call& call, agents::CallState state,
                                        const agents::ToolOutcome* outcome) {
@@ -456,12 +542,84 @@ agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
       stream->status.clear();
     }
   };
-  hooks.approve = [this, stream, autoApprove, approvals, byName](const agents::Call& call) -> int {
+  // Auto mode's verdicts within this reply, so a repeated call is not judged twice.
+  auto verdicts = std::make_shared<std::map<std::string, automode::Judgement>>();
+  auto setNote = [stream](const std::string& id, const std::string& note) {
+    std::lock_guard<std::mutex> lock(stream->mutex);
+    for (ToolCall& t : stream->toolCalls) {
+      if (t.id == id) t.autoNote = note;
+    }
+  };
+  hooks.denialText = [stream](const agents::Call& call) -> std::string {
+    std::lock_guard<std::mutex> lock(stream->mutex);
+    for (const ToolCall& t : stream->toolCalls) {
+      if (t.id == call.id && t.autoNote.rfind("Blocked by auto mode", 0) == 0) {
+        return t.autoNote + ". Do not try to get around this; if the step is really needed, tell the user what you wanted to do and why.";
+      }
+    }
+    return "";
+  };
+  hooks.approve = [this, stream, approval, approvals, byName, verdicts, setNote](const agents::Call& call) -> int {
     const std::string policy = approvals.is_object() ? approvals.value(call.name, "ask") : "ask";
     auto decide = [&]() -> std::pair<int, std::string> {
       if (policy == "never") return {agents::Deny, "denied (never)"};
-      if (autoApprove) return {agents::Allow, "allowed (auto-approve)"};
+      if (approval.mode == automode::Mode::All) return {agents::Allow, "allowed (approve everything)"};
       if (policy == "always") return {agents::Allow, "allowed (always)"};
+      if (approval.mode == automode::Mode::Auto) {
+        auto spec = byName.find(call.name);
+        automode::Call c;
+        if (spec != byName.end()) {
+          c.serverId = spec->second.serverId;
+          c.server = spec->second.serverName;
+          c.tool = spec->second.tool;
+          c.description = spec->second.description;
+          c.annotations = spec->second.annotations;
+        } else {
+          c.tool = call.name;
+        }
+        c.args = call.args;
+        c.userRequest = approval.userRequest;
+        c.projectFolder = approval.projectFolder;
+        const std::string key = call.name + "\n" + call.args.dump();
+        automode::Judgement j;
+        auto cached = verdicts->find(key);
+        if (cached != verdicts->end()) {
+          j = cached->second;
+        } else {
+          j = automode::rules(c);
+          if (j.verdict == automode::Verdict::Ask && j.reason.empty() && !approval.judgeAllowed) {
+            j.reason = "no rule settles it, and a private chat is never sent to the judge";
+          } else if (j.verdict == automode::Verdict::Ask && j.reason.empty()) {
+            // No rule settles it: the judge.
+            {
+              std::lock_guard<std::mutex> lock(stream->mutex);
+              stream->status = "Auto mode is checking " + c.tool + "...";
+            }
+            const Json payload{{"model", approval.judgeModel}, {"stream", false}, {"messages", automode::judgeMessages(c)}};
+            api::Result res = api_.completion(payload);
+            if (res.ok && res.data.contains("choices") && res.data["choices"].is_array() && !res.data["choices"].empty()) {
+              j = automode::parseJudge(res.data["choices"][0].value("message", Json::object()).value("content", ""));
+            } else {
+              j.verdict = automode::Verdict::Ask;
+              j.reason = "the judge could not be reached (" + api::errorMessage(res) + ")";
+            }
+          }
+          (*verdicts)[key] = j;
+        }
+        const automode::Verdict v = automode::apply(j, approval.blockRisky);
+        const std::string by = j.fromJudge ? "judge" : "rule";
+        if (v == automode::Verdict::Allow) {
+          setNote(call.id, "Auto mode allowed it: " + j.reason);
+          return {agents::Allow, "allowed (auto mode, " + by + ": " + j.reason + ")"};
+        }
+        if (v == automode::Verdict::Block) {
+          setNote(call.id, "Blocked by auto mode: " + j.reason);
+          return {agents::Deny, "blocked (auto mode, " + by + ": " + j.reason + ")"};
+        }
+        setNote(call.id, std::string(j.verdict == automode::Verdict::Block ? "Auto mode thinks this is risky" : "Auto mode wants you to decide") +
+                             (j.reason.empty() ? "" : ": " + j.reason));
+        // Then the card, as without auto mode.
+      }
       std::unique_lock<std::mutex> lock(stream->mutex);
       while (true) {
         for (const ToolCall& t : stream->toolCalls) {
@@ -586,12 +744,12 @@ void App::startToolStream(const std::string& assistantId, const std::string& mod
   }
   std::map<std::string, agents::ToolSpec> byName;
   for (const auto& spec : config.tools) byName[spec.name] = spec;
-  const bool autoApprove = settings().extra.value("mcpAutoApprove", false);
+  const ApprovalConfig approval = approvalConfigFor(config.messages, config.model);
   const Json approvals = settings().extra.value("mcpApprovals", Json::object());
   const std::string directUrl = settings().ollamaUrl;
 
-  async::runDetached([this, stream, config, clients, byName, autoApprove, approvals, directUrl] {
-    agents::LoopHooks hooks = makeToolHooks(stream, clients, byName, autoApprove, approvals);
+  async::runDetached([this, stream, config, clients, byName, approval, approvals, directUrl] {
+    agents::LoopHooks hooks = makeToolHooks(stream, clients, byName, approval, approvals);
     hooks.onDelta = [stream](const std::string& content, const std::string& reasoning) {
       std::lock_guard<std::mutex> lock(stream->mutex);
       stream->started = true;
@@ -671,6 +829,16 @@ void App::drawToolCallCards(Message& message, float width) {
     icons::draw(dl, call.expanded ? icons::Icon::Chevron : icons::Icon::ChevronRight,
                 ImVec2(rowPos.x + innerWidth - 8.0f, midY), 10.0f, palette.textDim);
 
+    // Auto mode's verdict, however the card is folded.
+    if (!call.autoNote.empty()) {
+      const bool blocked = call.autoNote.rfind("Blocked by auto mode", 0) == 0;
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(blocked ? palette.warning : palette.textDim));
+      ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + innerWidth);
+      ImGui::TextUnformatted(call.autoNote.c_str());
+      a11y::ui::textItem(call.autoNote);
+      ImGui::PopTextWrapPos();
+      ImGui::PopStyleColor();
+    }
     // Approval buttons stay visible however the card is folded.
     if (call.state == agents::Pending && message.streaming) {
       auto decide = [&](int decision) {
@@ -745,11 +913,7 @@ void App::drawMcpSection(float width) {
     ImGui::SameLine();
     widgets::dimText("%d tool%s from %d connected server%s", static_cast<int>(specs.size()),
                      specs.size() == 1 ? "" : "s", connected, connected == 1 ? "" : "s");
-    bool autoApprove = settings().extra.value("mcpAutoApprove", false);
-    if (ImGui::Checkbox("Approve every tool call automatically", &autoApprove)) {
-      settings().extra["mcpAutoApprove"] = autoApprove;
-      settings().save();
-    }
+    drawApprovalModeControls(width);
     int rounds = settings().extra.value("mcpMaxRounds", 8);
     ImGui::SetNextItemWidth(200.0f);
     if (ImGui::SliderInt("Max tool rounds per reply", &rounds, 1, 24)) {

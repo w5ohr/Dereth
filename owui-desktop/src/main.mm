@@ -904,6 +904,7 @@ int runCameraSelfTest();
 int runMeetingSelfTest();
 int runVoiceSelfTest();
 int runNotifySelfTest();
+int runAutoModeSelfTest();
 int runCrashChild(int argc, const char* argv[]);
 
 int main(int argc, const char* argv[]) {
@@ -981,6 +982,7 @@ int main(int argc, const char* argv[]) {
     if (std::string(argv[i]) == "--meetingtest") return runMeetingSelfTest();
     if (std::string(argv[i]) == "--voicetest") return runVoiceSelfTest();
     if (std::string(argv[i]) == "--notifytest") return runNotifySelfTest();
+    if (std::string(argv[i]) == "--automodetest") return runAutoModeSelfTest();
     if (std::string(argv[i]) == "--crashchild") return runCrashChild(argc, argv);
   }
   // A chat in its own window is another instance started with these flags.

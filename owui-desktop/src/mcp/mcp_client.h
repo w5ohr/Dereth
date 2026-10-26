@@ -43,6 +43,7 @@ struct Tool {
   std::string name;
   std::string description;
   Json inputSchema = Json::object();
+  Json annotations;   // readOnlyHint / destructiveHint / idempotentHint / openWorldHint, when the server sends them
 };
 
 struct Resource {

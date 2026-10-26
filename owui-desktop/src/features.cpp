@@ -368,6 +368,9 @@ void App::drawPalette() {
     pane = Pane::Tools;
     toolsTabRequest = "meeting";
   });
+  add("Tool approvals: ask every time", "command", [this] { setApprovalMode(automode::Mode::Ask); });
+  add("Tool approvals: auto mode", "command", [this] { setApprovalMode(automode::Mode::Auto); });
+  add("Tool approvals: approve everything", "command", [this] { setApprovalMode(automode::Mode::All); });
   add("Watch a window (screen watch)...", "command", [this] {
     pane = Pane::Tools;
     toolsTabRequest = "screenwatch";

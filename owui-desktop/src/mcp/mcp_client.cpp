@@ -781,6 +781,7 @@ bool Client::refreshTools(std::string* error) {
       tool.name = t.value("name", "");
       tool.description = t.value("description", "");
       tool.inputSchema = t.value("inputSchema", Json{{"type", "object"}, {"properties", Json::object()}});
+      if (t.contains("annotations") && t["annotations"].is_object()) tool.annotations = t["annotations"];
       if (!tool.name.empty()) all.push_back(tool);
     }
     cursor = result.value("nextCursor", "");

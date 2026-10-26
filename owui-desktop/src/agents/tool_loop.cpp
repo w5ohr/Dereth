@@ -305,7 +305,8 @@ LoopResult runToolLoop(api::Client& api, const std::string& directOllamaUrl, con
       ToolOutcome outcome;
       if (decision == Deny) {
         outcome.isError = true;
-        outcome.text = "The user declined to run this tool. Do not call it again; continue without it.";
+        const std::string why = hooks.denialText ? hooks.denialText(call) : "";
+        outcome.text = !why.empty() ? why : "The user declined to run this tool. Do not call it again; continue without it.";
         if (hooks.onCallState) hooks.onCallState(call, Denied, &outcome);
       } else {
         if (hooks.onCallState) hooks.onCallState(call, Running, nullptr);

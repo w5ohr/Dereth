@@ -993,6 +993,20 @@ Things a browser tab can't do, plus the workflow features built on top:
   through during meetings. macOS asks for notification and Focus-status
   access only from that card's buttons. `Open WebUI --notifytest` covers
   what's held, the settle time and the digest.
+- **Auto mode for tool calls:** like Claude Code's. Next to the tools button
+  in the composer, a chip shows how tool calls are approved: ask, auto or
+  all. Click it to cycle, or use the palette or Tools > MCP. In auto mode,
+  calls that only read run on their own. Clearly destructive ones wait for
+  you, as do calls that don't fit what you asked for. That covers deleting,
+  rm -rf, sudo, force-pushing, dropping tables, touching passwords or keys,
+  writing outside the project or into system folders, and a tool its server
+  marks destructive. You can choose to block those outright instead. Any
+  other call goes to a short check by a model, the judge. It weighs the call
+  against your own request, so a web page or tool result can't talk the
+  assistant into something. Each tool card says what auto mode decided and
+  why. Private chats use the rules only, so nothing leaves the Mac.
+  "Always allow" and "never" per tool still come first. `Open WebUI
+  --automodetest` covers the rules, the danger scan and the judge.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

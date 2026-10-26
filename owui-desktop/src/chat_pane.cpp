@@ -1267,6 +1267,19 @@ void App::drawChatPane() {
         widgets::toastInfo("No MCP server is connected - add one under Tools > MCP");
       }
     }
+    if (mcpEnabled) {
+      // How tool calls are approved; a click goes ask -> auto -> everything.
+      const automode::Mode mode = approvalMode();
+      const char* chip = mode == automode::Mode::Auto ? "auto" : mode == automode::Mode::All ? "all" : "ask";
+      ImGui::SameLine(0, 2);
+      ImGui::PushStyleColor(ImGuiCol_Text, theme::toVec4(mode == automode::Mode::Auto ? palette.accent : mode == automode::Mode::All ? palette.warning : palette.textDim));
+      if (ImGui::SmallButton((std::string(chip) + "##approvalmode").c_str())) {
+        setApprovalMode(mode == automode::Mode::Ask ? automode::Mode::Auto : mode == automode::Mode::Auto ? automode::Mode::All : automode::Mode::Ask);
+      }
+      ImGui::PopStyleColor();
+      a11y::ui::nameLastItem(std::string("Tool approvals: ") + automode::modeLabel(mode), true);
+      if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tool calls: %s (click to change)", automode::modeLabel(mode));
+    }
     ImGui::SameLine();
     if (icons::button("tools", icons::Icon::Wrench, "Tools", 0.0f,
                       activeToolIds.empty() ? 0 : palette.accent)) {

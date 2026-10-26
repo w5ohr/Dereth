@@ -203,11 +203,12 @@ void App::startPrivateStream(const std::string& assistantId, const std::string& 
   }
   std::map<std::string, agents::ToolSpec> byName;
   for (const auto& spec : config.tools) byName[spec.name] = spec;
-  const bool autoApprove = settings().extra.value("mcpAutoApprove", false);
+  ApprovalConfig approval = approvalConfigFor(config.messages, config.model);
+  approval.judgeAllowed = false;   // a private chat stays on this Mac: auto mode uses its rules only
   const Json approvals = settings().extra.value("mcpApprovals", Json::object());
 
-  async::runDetached([this, stream, config, clients, byName, autoApprove, approvals] {
-    agents::LoopHooks hooks = makeToolHooks(stream, clients, byName, autoApprove, approvals);
+  async::runDetached([this, stream, config, clients, byName, approval, approvals] {
+    agents::LoopHooks hooks = makeToolHooks(stream, clients, byName, approval, approvals);
     hooks.onDelta = [stream](const std::string& content, const std::string& reasoning) {
       std::lock_guard<std::mutex> lock(stream->mutex);
       stream->started = true;

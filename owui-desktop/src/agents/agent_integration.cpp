@@ -102,12 +102,13 @@ void App::startAgentStream(const std::string& assistantId, const std::string& mo
   }
   std::map<std::string, agents::ToolSpec> byName;
   for (const auto& spec : config.tools) byName[spec.name] = spec;
-  const bool autoApprove = settings().extra.value("mcpAutoApprove", false);
+  ApprovalConfig approval = approvalConfigFor(config.history, config.model);
+  approval.userRequest = config.goal;   // the agent's goal is the user's request
   const Json approvals = settings().extra.value("mcpApprovals", Json::object());
   const std::string directUrl = settings().ollamaUrl;
 
-  async::runDetached([this, stream, config, clients, byName, autoApprove, approvals, directUrl] {
-    agents::LoopHooks tool = makeToolHooks(stream, clients, byName, autoApprove, approvals);
+  async::runDetached([this, stream, config, clients, byName, approval, approvals, directUrl] {
+    agents::LoopHooks tool = makeToolHooks(stream, clients, byName, approval, approvals);
     agents::AgentHooks hooks;
     hooks.approve = tool.approve;
     hooks.invoke = tool.invoke;

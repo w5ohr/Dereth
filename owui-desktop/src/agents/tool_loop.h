@@ -29,6 +29,7 @@ struct ToolSpec {
   std::string serverId;
   std::string serverName;
   std::string tool;          // the server's own tool name
+  Json annotations;          // MCP tool annotations (readOnlyHint, destructiveHint, ...) when given
 };
 
 // A streaming chat transport in the Ollama /api/chat dialect: payload in,
@@ -73,6 +74,8 @@ struct LoopHooks {
   std::function<bool(const std::string& content, const std::string& reasoning)> onDelta;
   // Blocks until the user decides; returns a Decision. Absent = allow.
   std::function<int(const Call&)> approve;
+  // What the model is told about a denied call; "" = the user declined (auto mode says why it blocked).
+  std::function<std::string(const Call&)> denialText;
   // Runs the tool. Blocks.
   std::function<ToolOutcome(const Call&)> invoke;
   // Progress for the UI; `outcome` is set for Done/Failed/Denied.
