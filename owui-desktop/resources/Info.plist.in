@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleExecutable</key><string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+  <key>CFBundleIconFile</key><string>${MACOSX_BUNDLE_ICON_FILE}</string>
+  <key>CFBundleIdentifier</key><string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>${MACOSX_BUNDLE_BUNDLE_NAME}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+  <key>CFBundleVersion</key><string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>Let the assistant read your events and add new ones when you ask it to (Settings &gt; Tools &gt; Mac data).</string>
+  <key>NSCalendarsUsageDescription</key><string>Let the assistant read your events and add new ones when you ask it to (Settings &gt; Tools &gt; Mac data).</string>
+  <key>NSRemindersFullAccessUsageDescription</key><string>Let the assistant read your reminders and add new ones when you ask it to (Settings &gt; Tools &gt; Mac data).</string>
+  <key>NSRemindersUsageDescription</key><string>Let the assistant read your reminders and add new ones when you ask it to (Settings &gt; Tools &gt; Mac data).</string>
+  <key>NSContactsUsageDescription</key><string>Let the assistant look people up in your contacts when you ask it to (Settings &gt; Tools &gt; Mac data).</string>
+  <key>NSCameraUsageDescription</key><string>Take a photo to send to a vision model, when you press Take photo.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Listen for your wake phrase on this Mac (Settings &gt; Voice), only when you switch it on.</string>
+  <key>NSFocusStatusUsageDescription</key><string>Hold notifications while a Focus is on, and give you a digest afterwards.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Record voice messages to transcribe with your Open WebUI server.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>Open WebUI link</string>
+      <key>CFBundleURLSchemes</key><array><string>owui</string></array>
+    </dict>
+  </array>
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>Ask Open WebUI</string></dict>
+      <key>NSMessage</key><string>askService</string>
+      <key>NSPortName</key><string>Open WebUI</string>
+      <key>NSSendTypes</key><array><string>NSStringPboardType</string></array>
+    </dict>
+  </array>
+  <key>NSUserActivityTypes</key>
+  <array><string>com.davidcochran.owui-desktop.chat</string></array>
+  <key>LSUIElement</key><false/>
+</dict>
+</plist>

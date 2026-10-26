@@ -1,0 +1,221 @@
+// macOS integration beyond the window: global hotkey, menu bar extra,
+// Services, URL scheme, drag and drop, Spotlight, notifications with reply,
+// Dock badge/progress, Quick Look, Live Text, Handoff, appearance, file
+// watching and subprocesses. Everything here is callable from the UI thread;
+// callbacks into the app are marshalled back through async::post by the caller.
+#pragma once
+
+#include <functional>
+#include <string>
+#include <vector>
+
+namespace native {
+
+struct Callbacks {
+  std::function<void()> quickAsk;                         // global hotkey / menu
+  std::function<void()> newChat;
+  std::function<void()> showWindow;
+  std::function<void(const std::string& chatId)> openChat;
+  std::function<void(const std::string& text)> askText;   // Services, URL scheme
+  std::function<void(const std::vector<std::string>& paths)> dropFiles;
+  std::function<void(const std::string& url)> openUrl;    // owui:// links
+  std::function<void(const std::string& reply)> notificationReply;
+  std::function<void(bool dark)> appearanceChanged;
+  std::function<std::vector<std::pair<std::string, std::string>>()> recentChats;
+  std::function<void()> captureScreen;                    // capture hotkey / menu bar extra
+  std::function<void(bool sleeping)> sleepWake;           // NSWorkspace will-sleep / did-wake
+  std::function<void(bool down)> pushToTalk;              // the hold-to-talk hotkey pressed / released (#119)
+};
+
+void install(const Callbacks& callbacks);
+
+// Menu items registered by buildMenuBar (main.mm) by shortcut id; `key` is
+// the NSMenuItem key equivalent ("" unbinds), `mods` bits: 1 cmd, 2 shift,
+// 4 alt, 8 ctrl.
+void setMenuShortcut(const std::string& id, const std::string& key, int mods);
+void suspendMenuShortcuts();   // clears every registered key equivalent (the editor is capturing)
+
+// Menu-bar-only mode: accessory activation policy (no Dock icon, no app
+// switcher entry); the window can still be shown from the menu bar extra
+// and closing it keeps the app running.
+void setMenuBarOnly(bool on);
+bool menuBarOnly();
+// Login item through SMAppService (macOS 13+). Status: 0 not registered,
+// 1 enabled, 2 requires approval, 3 not found. Returns false with `error` when the call failed.
+bool setLoginItem(bool on, std::string* error);
+int loginItemStatus();
+
+// Global hotkey (Carbon, no accessibility permission needed). Returns false if
+// the combination is taken.
+bool registerHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift);
+void unregisterHotkey();
+// Second global hotkey, for screen capture (fires Callbacks::captureScreen).
+bool registerCaptureHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift);
+void unregisterCaptureHotkey();
+// Third global hotkey, held to talk: Callbacks::pushToTalk(true) on press,
+// (false) on release. Carbon; no Accessibility permission (#119).
+bool registerPushToTalkHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift);
+void unregisterPushToTalkHotkey();
+
+// Runs the system screen capture (the same UI as Shift+Cmd+4: drag a region,
+// or press Space for a window) and returns the PNG. False when cancelled.
+// Blocks until the user finishes, so call it from a worker. macOS asks for
+// Screen Recording permission the first time.
+bool captureScreen(bool interactive, std::string* png);
+void showMainWindow();
+
+// Windows. openNewInstance starts another copy of this app with `args`
+// (`open -n`), so a chat can live in its own window.
+bool openNewInstance(const std::vector<std::string>& args);
+
+// Windows in this process (#121). openChatWindow (main.mm) opens a chat - or a
+// new one when chatId is empty - in a window of its own; asTab adds it as a
+// tab of the key window. Window helpers below (floating, size, cascade) act on
+// the window set by setCurrentWindow while its view runs, else the key window.
+bool openChatWindow(const std::string& chatId, bool mini, bool asTab);
+// Same, placed with its top-left at a screen point (a chat dragged out).
+bool openChatWindowAt(const std::string& chatId, float screenX, float screenY);
+void setCurrentWindow(void* nsWindow);
+void* currentWindowHandle();   // the set one, else the key window
+void* currentWindowSet();      // the set one only (nullptr when none)
+// Runs fn as the given window (its view and ImGui context current); main.mm
+// installs the scope. Native views call this for events they forward.
+void runInWindow(void* nsWindow, const std::function<void()>& fn);
+void setWindowScope(std::function<void(void* nsWindow, const std::function<void()>& fn)> scope);
+void setFloating(bool floating);       // float above other apps' windows
+void setWindowSize(float width, float height);
+void cascadeWindow();                   // offset from the window already on screen
+
+// Menu bar extra.
+void setStatusItemVisible(bool visible);
+void refreshStatusMenu();
+
+// Attach drag-and-drop to the main content view.
+void enableDropOnMainWindow();
+
+// Spotlight.
+void indexChatForSpotlight(const std::string& chatId, const std::string& title,
+                           const std::string& preview);
+void removeChatFromSpotlight(const std::string& chatId);
+void clearSpotlightIndex();
+
+// Notifications. The "reply" category offers an inline text field.
+// Notification permission (#125): asked for only from Settings. The status
+// is cached (UNAuthorizationStatus; -1 until read) and refreshed on request.
+void refreshNotificationAuthorization();
+int notificationAuthorization();
+void requestNotificationAuthorization();
+void notifyWithReply(const std::string& title, const std::string& body,
+                     const std::string& chatId);
+
+// Dock.
+void setDockBadge(const std::string& text);
+void setDockProgress(double fraction);   // < 0 hides it
+
+// Quick Look a local file.
+void quickLook(const std::string& path);
+
+// Live Text: recognise text in an encoded image (PNG/JPEG bytes).
+std::string recognizeText(const std::string& imageBytes);
+
+// Handoff: advertise the current chat so another device can continue it in
+// the web UI.
+void updateHandoff(const std::string& webUrl, const std::string& title);
+void clearHandoff();
+
+bool systemIsDark();
+bool appIsActive();   // this app is the frontmost one
+void setWindowTitle(const std::string& title);
+
+// Folder watching (FSEvents). Returns a token for stop().
+int watchFolder(const std::string& path, std::function<void(const std::vector<std::string>&)> onChange);
+void stopWatching(int token);
+
+// Run a command with a timeout, capturing both streams. Optionally sandboxed
+// (no network, write access limited to `workdir`).
+struct ProcessResult {
+  int exitCode = -1;
+  std::string output;
+  bool timedOut = false;
+};
+ProcessResult runProcess(const std::vector<std::string>& argv, const std::string& workdir,
+                         int timeoutSeconds, bool sandboxed);
+
+std::string homeDirectory();
+// Ceiling for the Metal view's redraw rate (low-power mode); 60 restores the default.
+void setPreferredFrameRate(int fps);
+std::vector<std::string> chooseFolder();
+
+// Native composer: an NSTextView floated over the ImGui composer box so the
+// input gets IME/CJK, dictation, spellcheck, the emoji picker and trackpad
+// selection. The chat pane positions it every frame in ImGui screen
+// coordinates (points, y down); App::frame hides it when the pane isn't drawn.
+struct ComposerCallbacks {
+  std::function<void()> send;              // Enter (Shift+Enter is a newline), or Cmd+Enter
+  std::function<void()> escape;            // Esc: keyboard goes back to ImGui
+  std::function<void()> tab;               // Tab: slash-prompt completion
+  std::function<bool(int direction)> navigate;   // Option+Up (-1) / Option+Down (+1); false = nothing to walk
+  std::function<bool()> pasteImage;        // return true when the paste was an image
+  std::function<bool(int direction)> history;          // plain Up/Down: -1 older, +1 newer; false = move the caret
+  std::function<bool(const std::string&)> pasteText;   // return true when the text was taken elsewhere
+};
+void composerInstall(const ComposerCallbacks& callbacks);
+// One composer per window (#121): the calls here go to the selected window's
+// (nullptr: the main window). Forget drops a closed window's.
+void composerSelectWindow(void* nsWindow);
+void* composerSelectedWindow();
+void composerForgetWindow(void* nsWindow);
+bool composerInstalled();
+void composerSetFrame(float x, float y, float width, float height);
+void composerSetVisible(bool visible);
+void composerSetText(const std::string& text);
+std::string composerText();
+bool composerFocus();                      // false when the view can't take focus yet
+bool composerIsFocused();
+void composerHandOff();                    // give the keyboard back to ImGui if the composer has it
+float composerContentHeight();             // laid-out text height in points
+void composerSetStyle(unsigned textColor, unsigned placeholderColor, unsigned accent,
+                      float fontSize, bool sendOnEnter);
+
+// Artifact pane: a WKWebView floated over the ImGui artifact column, the same
+// way the composer is. Console output and page errors are collected through
+// an injected script so the column can show them.
+void artifactInstall();
+void artifactSetFrame(float x, float y, float width, float height);
+void artifactSetVisible(bool visible);
+void artifactLoad(const std::string& html);     // replaces the document, clears the console
+void artifactReload();
+std::vector<std::string> artifactConsole();     // messages since the last load, oldest first
+
+// Offscreen renderer: loads `html` in a hidden WKWebView `width` points
+// wide, waits for the page to call owuiDone (height, or "error:...") and
+// returns a PNG at the screen's scale. Blocks the calling worker up to
+// `timeoutMs`; "" on error or timeout. Jobs run one at a time.
+std::string renderHtmlToPng(const std::string& html, float width, int timeoutMs);
+
+// Loads a URL in the same offscreen view (scripts run), waits `settleMs`
+// after the load, and returns the page's title, visible text and links -
+// plus a PNG of the viewport when asked. On a timeout it returns whatever
+// the page shows by then with `error` set. Blocking; never from the main thread.
+struct BrowseResult {
+  std::string title, url, text, png, error;
+  std::vector<std::pair<std::string, std::string>> links;   // text, href
+};
+BrowseResult browseUrl(const std::string& url, float width, float height, int timeoutMs, int settleMs, bool wantPng);
+
+// Document pane: a PDFKit view floated over the ImGui document column, used
+// to show the PDF behind a citation with the cited passage highlighted.
+void pdfInstall();
+void pdfSetFrame(float x, float y, float width, float height);
+void pdfSetVisible(bool visible);
+bool pdfLoad(const std::string& bytes);         // false when PDFKit can't parse it
+int pdfPageCount();
+int pdfCurrentPage();                           // 1-based
+void pdfGoToPage(int page);                     // 1-based
+// Finds `passage` (whitespace-insensitive, shortening from the front until
+// something matches), highlights it and scrolls to it. Returns the page it
+// was found on, or 0.
+int pdfHighlight(const std::string& passage, int preferredPage);
+void pdfClearHighlights();
+
+}  // namespace native
