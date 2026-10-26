@@ -13,6 +13,7 @@
 #include "agents/agent_loop.h"
 #include "core/async.h"
 #include "core/common.h"
+#include "ui/a11y_imgui.h"
 #include "ui/icons.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -243,6 +244,7 @@ void App::drawAgentCard(Message& message, float width) {
     if (attempts > 1) label += "  (attempt " + std::to_string(attempts) + ")";
     const int calls = step.value("toolCalls", 0);
     if (calls > 0) label += "  - " + std::to_string(calls) + (calls == 1 ? " tool call" : " tool calls");
+    a11y::ui::nameLastItem("Step " + label);   // VoiceOver (#142)
     dl->PushClipRect(rowPos, ImVec2(rowPos.x + innerWidth, rowPos.y + rowHeight), true);
     dl->AddText(ImVec2(rowPos.x + 22.0f, rowPos.y + 3.0f),
                 state == agents::StepPending ? palette.textDim : palette.text, label.c_str());

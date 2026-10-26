@@ -928,6 +928,14 @@ Things a browser tab can't do, plus the workflow features built on top:
   the message field, and arrow keys walk the messages, which VoiceOver
   follows. `Open WebUI --voiceovertest` covers the tree, the ImGui hooks and
   the Cocoa elements.
+- **Mac data tools:** with tools on, the model can list and add Calendar
+  events, list and add Reminders, search Contacts by name or email, and open a
+  Mail draft for you to review and send. It never sends mail itself. Each kind
+  is off until you switch it on under Tools > MCP > Mac data. macOS asks for
+  access once, from that card's Allow button, and never from a chat. If access
+  is missing, the model is told where to grant it. Every call still goes
+  through the approval card. `Open WebUI --personaltest` covers the tools on a
+  fake calendar and contact list.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

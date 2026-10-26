@@ -2570,3 +2570,30 @@ reconnect, scheduler) pauses while it is hidden. Some app-wide tool windows (ske
 and file editors, playground, tour) open in the main window even when started from a chat
 window. Two windows on the same chat both edit it, with the last save winning. Remaining
 static UI state in other panes, such as the settings pane's edit buffers, is shared.
+
+2026-10-25 89 (personal-data tools): the built-in "mac" tool server, beside the browser
+tool. `core/personaldata` holds what needs no permission: six tools (calendar_events,
+calendar_create_event, reminders_list, reminders_create, contacts_search, mail_draft),
+offered only for the kinds switched on (extra["macTools"], all off by default). It also
+holds local-time parsing, ranges ("today", "this week" from Monday, "this month", start/end
+with a date-only end including that day, over a year refused), the text the model gets,
+recipient parsing, and the messages for each access state. The system calls sit behind a
+`Backend`. `personal_tools.mm` is the real one: EventKit (full access on macOS 14,
+add-only allowed for creating events), the Contacts framework (by name, or by address when
+the query has an @), and Mail's compose share service, which opens a draft and needs no
+Automation permission. A tool call never asks for access. The card under Tools > MCP > Mac
+data shows each kind's status, an "Allow ... access" button for not-asked-yet, and "Open
+Privacy settings" for denied or add-only. Info.plist gained the Calendars, Reminders and
+Contacts usage strings, and EventKit and Contacts are linked. Also for #142: tool-call card
+headers and agent step rows now have VoiceOver names. `--personaltest` runs 27 checks
+against a fake backend, and reads this Mac's real access status without asking. On this
+machine all three were "not asked yet". Verified in the GUI against a scratch Open WebUI,
+without any permission prompt: the card listed the four kinds off and "not asked yet" with
+Allow buttons, which I did not press. After switching Calendar on and turning tools on in
+the composer, "What is on my calendar today?" made qwen3:8b call mac__calendar_events with
+{"when": "today"}. The tool reported that access had not been granted, and the model told
+the user to grant it. Not covered: real Calendar, Reminders and Contacts reads and writes,
+and the Mail draft window, all of which need the access prompts or a Mail account. The app
+is signed ad hoc, so macOS may ask again after each rebuild until #128 gives it a stable
+identity. A one-line tool result sits behind the result box's horizontal scrollbar, an
+existing display issue.

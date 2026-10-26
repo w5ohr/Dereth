@@ -6,6 +6,8 @@
 // extra["mcpEnabled"], extra["mcpAutoApprove"], extra["mcpMaxRounds"].
 #include "app.h"
 #include "browser_tool.h"
+#include "core/personaldata.h"
+#include <ctime>
 
 #include "plugins/plugin_host.h"
 
@@ -18,6 +20,7 @@
 #include "native.h"
 #include "pane_common.h"
 #include "platform.h"
+#include "ui/a11y_imgui.h"
 #include "ui/icons.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
@@ -228,6 +231,8 @@ std::vector<agents::ToolSpec> App::mcpToolSpecs() const {
   if (browsertool::optionsFromSettings().enabled) {
     for (const agents::ToolSpec& spec : browsertool::specs()) out.push_back(spec);
   }
+  // Calendar, Reminders, Contacts, Mail (#89): only the kinds switched on.
+  for (const agents::ToolSpec& spec : personal::specs(personal::optionsFromSettings())) out.push_back(spec);
   for (const agents::ToolSpec& spec : scriptToolSpecs()) out.push_back(spec);
   // Plugin tools sit beside the MCP ones; their "server" is the plugin.
   for (const plugins::Tool& tool : plugins::Host::instance().tools()) {
@@ -495,6 +500,18 @@ agents::LoopHooks App::makeToolHooks(const std::shared_ptr<Stream>& stream,
       }
       return out;
     }
+    if (spec->second.serverId == personal::kServerId) {
+      const double started = core::nowMillis();
+      std::string error;
+      out.text = personal::call(spec->second.tool, call.args, personal::optionsFromSettings(), personal::nativeBackend(),
+                                static_cast<double>(std::time(nullptr)), &error);
+      out.durationMs = core::nowMillis() - started;
+      if (!error.empty()) {
+        out.isError = true;
+        out.text = error;
+      }
+      return out;
+    }
     if (core::startsWith(spec->second.serverId, "plugin:")) {
       const double started = core::nowMillis();
       std::string error;
@@ -634,6 +651,9 @@ void App::drawToolCallCards(Message& message, float width) {
     }
     dl->AddText(ImVec2(x, rowPos.y + 3.0f), palette.textDim, meta.c_str());
     const char* status = stateLabel(call.state);
+    // VoiceOver (#142): the header row reads as the tool, its server and state.
+    a11y::ui::nameLastItem("Tool call " + call.tool + (call.server.empty() ? "" : ", " + call.server) + ", " + status +
+                           (call.expanded ? ", expanded" : ", collapsed"));
     const float statusWidth = ImGui::CalcTextSize(status).x;
     dl->AddText(ImVec2(rowPos.x + innerWidth - statusWidth - 22.0f, rowPos.y + 3.0f), statusColor, status);
     icons::draw(dl, call.expanded ? icons::Icon::Chevron : icons::Icon::ChevronRight,
@@ -755,6 +775,7 @@ void App::drawMcpSection(float width) {
   }, width);
 
   drawBrowserToolCard(width);
+  drawMacToolsCard(width);
   drawScriptToolsCard(width);
 
   if (servers.empty()) {
