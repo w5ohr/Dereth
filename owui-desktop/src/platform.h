@@ -39,6 +39,10 @@ bool startRecording();
 std::string stopRecording();   // returns WAV bytes ("" on failure)
 bool recording();
 float recordingLevel();
+float recordingLevelDb();   // dBFS, -160..0
+// OWUI_FAKE_MIC=<audio file>: recording "hears" that file instead of the
+// microphone (test hook; no microphone access is used).
+bool fakeMicrophone();
 
 // Returns PNG bytes of an image on the pasteboard, or "" if there is none.
 std::string clipboardImage();

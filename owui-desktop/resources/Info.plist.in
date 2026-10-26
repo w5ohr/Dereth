@@ -19,6 +19,7 @@
   <key>NSRemindersUsageDescription</key><string>Let the assistant read your reminders and add new ones when you ask it to (Settings &gt; Tools &gt; Mac data).</string>
   <key>NSContactsUsageDescription</key><string>Let the assistant look people up in your contacts when you ask it to (Settings &gt; Tools &gt; Mac data).</string>
   <key>NSCameraUsageDescription</key><string>Take a photo to send to a vision model, when you press Take photo.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Listen for your wake phrase on this Mac (Settings &gt; Voice), only when you switch it on.</string>
   <key>NSMicrophoneUsageDescription</key><string>Record voice messages to transcribe with your Open WebUI server.</string>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsArbitraryLoads</key><true/></dict>

@@ -2748,3 +2748,45 @@ on the server (945 characters). Not covered: live capture of system audio and th
 microphone. It would record whatever this Mac is playing, possibly a real call, and the
 microphone needs its access prompt, so neither was started. The Screen Recording
 permission it needs was already in place for this build.
+
+2026-10-25 119 (push-to-talk and VAD): `core/voice` holds the logic.
+- **Vad:** works on dBFS meter readings. The noise floor follows quiet fast and loud
+  slowly, and not at all during speech, clamped to -90..-20. Speech is 12 dB above it for
+  150 ms; a turn ends after a 1.1 s pause, or at 30 s. Under 300 ms of speech, a cough,
+  keeps listening, and 8 s of nothing gives up. Pause and margin are settings.
+- **PushToTalk:** key repeat ignored, holds under 300 ms discarded.
+- **Wake phrases:** words normalised, speech-to-text spellings folded ("web you eye",
+  "open web" to "openwebui", "okay", "hay"), one stray word allowed, and `afterWake`
+  returns the question that followed.
+Native side: a third Carbon hotkey, Control-Option-Space (id 3), with its own handler for
+both kEventHotKeyPressed and kEventHotKeyReleased. The Quick Ask handler passes id 3 on.
+No Accessibility permission is needed. `voice_input.mm`: holding records with the existing
+recorder, and letting go transcribes through the server and sends it in the main window's
+chat (or appends it to the composer, a setting), with toasts for Listening, Sent, Too
+short and Nothing heard. Voice conversation's fixed level threshold is replaced by the
+detector, fed by the new `platform::recordingLevelDb`. The wake phrase (off by default)
+uses SFSpeechRecognizer with requiresOnDeviceRecognition on an AVAudioEngine tap. It
+restarts every 50 s, pauses while anything else uses the microphone, voice mode is on, or
+the app speaks. A phrase with a question sends it; a bare phrase starts one voice turn,
+which ends voice mode again afterwards or when nothing is said. Settings > Voice and
+read-aloud shows microphone access (and its Allow button), push-to-talk with send or put
+in the message field, the pause and margin sliders, the wake phrase with its text and
+speech-recognition access (and Allow), and the listener's state.
+NSSpeechRecognitionUsageDescription was added and Speech is linked. Test hook:
+OWUI_FAKE_MIC=<audio file> makes recording hear that file instead of the microphone, with
+a quiet, speech, quiet level curve. `--voicetest` runs 13 checks: onset at 150 ms and the
+end 1.1 s after speech, the floor not dragged up by talking, a cough not ending a turn,
+giving up after 8 s, the 30 s cap, a noisy room's floor rising so -30 dB is not speech but
+-14 is, a longer pause setting waiting out a thinking pause, the push-to-talk rules,
+normalising, wake spellings, a stray word but not unrelated speech, the question after
+the phrase, and the hotkey registering on an unused F19 chord. Verified in the GUI against
+the scratch Open WebUI (Whisper base, qwen3:8b), with OWUI_FAKE_MIC set to a `say -o` WAV
+of "What is the capital of Portugal? Answer in one word." and no microphone used. After
+switching push-to-talk on in Settings and bringing Finder to the front, a real 1.5 s
+Control-Option-Space hold (posted with CGEvent) showed "Listening - let go to send". On
+release it sent "What is the capital of Portugal? Answer in one word.", and qwen3:8b
+replied "The capital of Portugal is Lisbon.". A 120 ms tap gave "Too short - hold the keys
+while you talk". Not covered: the real microphone (its access prompt, and it would
+record the room), the wake phrase (speech-recognition and microphone prompts), and voice
+conversation with the new detector in the GUI, since it reads the reply aloud through the
+speakers. The detector itself is covered by the self-test.

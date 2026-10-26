@@ -40,6 +40,7 @@ std::map<int, std::function<void(const std::vector<std::string>&)>> gWatchCallba
 OSStatus hotkeyHandler(EventHandlerCallRef, EventRef event, void*) {
   EventHotKeyID id{};
   GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, nullptr, sizeof(id), nullptr, &id);
+  if (id.id == 3) return eventNotHandledErr;   // push-to-talk has its own handler
   if (id.id == 2) {
     // Capture: leave whatever app is in front alone; the capture UI is the OS's.
     if (gCallbacks.captureScreen) gCallbacks.captureScreen();
@@ -261,6 +262,42 @@ void unregisterCaptureHotkey() {
   if (gCaptureHotkeyRef) {
     UnregisterEventHotKey(gCaptureHotkeyRef);
     gCaptureHotkeyRef = nullptr;
+  }
+}
+
+static EventHotKeyRef gTalkHotkeyRef = nullptr;
+
+// Push-to-talk sees both edges; everything else passes on to the handler above.
+static OSStatus talkHandler(EventHandlerCallRef, EventRef event, void*) {
+  EventHotKeyID id{};
+  GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, nullptr, sizeof(id), nullptr, &id);
+  if (id.id != 3) return eventNotHandledErr;
+  const bool down = GetEventKind(event) == kEventHotKeyPressed;
+  if (gCallbacks.pushToTalk) gCallbacks.pushToTalk(down);
+  return noErr;
+}
+
+bool registerPushToTalkHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift) {
+  unregisterPushToTalkHotkey();
+  static bool handlerInstalled = false;
+  if (!handlerInstalled) {
+    const EventTypeSpec specs[] = {{kEventClassKeyboard, kEventHotKeyPressed}, {kEventClassKeyboard, kEventHotKeyReleased}};
+    InstallApplicationEventHandler(&talkHandler, 2, specs, nullptr, nullptr);
+    handlerInstalled = true;
+  }
+  UInt32 modifiers = 0;
+  if (cmd) modifiers |= cmdKey;
+  if (alt) modifiers |= optionKey;
+  if (ctrl) modifiers |= controlKey;
+  if (shift) modifiers |= shiftKey;
+  EventHotKeyID id = {'OWUI', 3};
+  return RegisterEventHotKey(static_cast<UInt32>(keyCode), modifiers, id, GetApplicationEventTarget(), 0, &gTalkHotkeyRef) == noErr;
+}
+
+void unregisterPushToTalkHotkey() {
+  if (gTalkHotkeyRef) {
+    UnregisterEventHotKey(gTalkHotkeyRef);
+    gTalkHotkeyRef = nullptr;
   }
 }
 

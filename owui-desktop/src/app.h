@@ -15,6 +15,7 @@
 #include "core/crashreport.h"
 #include "core/a11y.h"
 #include "core/fade.h"
+#include "core/voice.h"
 #include "core/imagemeta.h"
 #include "core/layouts.h"
 #include "core/logprobs.h"
@@ -459,6 +460,16 @@ class App {
   void updateMeetingNotes(bool final);
   void tickMeeting();
   void drawMeetingSection(float width);
+  // Push-to-talk, voice detection, wake phrase (voice_input.mm, #119).
+  voice::VadOptions vadOptions() const;
+  void applyPushToTalk();
+  void onPushToTalk(bool down);
+  void onWakeHeard(const std::string& after);
+  void tickWakeWord();
+  bool wakeTurnActive() const;
+  void drawVoiceInputSection(float width);
+  voice::Vad voiceVad_;
+  int voiceTurns_ = 0;   // turns sent since voice mode began
   void drawScreenWatchSection(float width);
   void drawPersonalCorpusSection(float width);
   std::vector<agents::ToolSpec> corpusToolSpecs() const;

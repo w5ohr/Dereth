@@ -974,6 +974,16 @@ Things a browser tab can't do, plus the workflow features built on top:
   Notes pane. System audio needs Screen Recording, and the app's own sound
   is left out. `Open WebUI --meetingtest` covers the resampling, the pause
   cutting and the notes.
+- **Push-to-talk and voice detection:** switch on "Hold Control-Option-Space
+  to talk" under Settings > Voice and read-aloud. Then hold the keys from any
+  app, speak, and let go. What you said is transcribed and sent, or put in
+  the message field if you prefer, and a quick tap is ignored. Voice
+  conversation ends your turn with a detector that learns the room's noise
+  and waits out a pause you set. An optional wake phrase ("hey open webui")
+  is recognised on this Mac, so nothing leaves it until the phrase is heard.
+  Then the question after it is sent, or the app listens for one.
+  `Open WebUI --voicetest` covers the detector, the hold rules and the
+  phrase matching.
 
 How the fifty were split and built is in `docs/FEATURE-PLAN.md`; the next
 hundred are planned in `docs/FEATURE-PLAN-2.md`.

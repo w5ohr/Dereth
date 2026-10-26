@@ -152,6 +152,8 @@ void App::drawSettingsPane() {
 
   widgets::sectionHeader("VOICE AND READ-ALOUD");
   drawTtsSection(width);
+  ImGui::Dummy(ImVec2(0, 6));
+  drawVoiceInputSection(width);   // push-to-talk, turn detection, wake phrase (#119)
   ImGui::Dummy(ImVec2(0, 8));
 
   widgets::sectionHeader("SMART FOLDERS AND TAGS");

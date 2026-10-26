@@ -224,6 +224,7 @@ void App::installNativeHooks() {
     return recent;
   };
   callbacks.sleepWake = [this](bool sleeping) { onSleepWake(sleeping); };
+  callbacks.pushToTalk = [this](bool down) { onPushToTalk(down); };
   native::install(callbacks);
 
   const Json& extra = settings().extra;
@@ -240,6 +241,7 @@ void App::installNativeHooks() {
       widgets::toastInfo("Control-Option-S is taken by another app; the capture hotkey is off");
     }
   }
+  applyPushToTalk();   // Control-Option-Space, held (#119)
   if (extra.value("globalHotkey", true)) {
     if (!native::registerHotkey(kOptionSpaceKeyCode, false, true, false, false)) {
       widgets::toastInfo("Option-Space is taken by another app; quick ask hotkey not registered");
@@ -1062,20 +1064,23 @@ void App::tickVoiceMode() {
         voiceState = 1;
         voiceHeardSpeech = false;
         voiceSilenceSince = now;
+        voiceVad_ = voice::Vad(vadOptions());
+        voiceVad_.reset(now);
       } else {
         widgets::toastError("Microphone unavailable");
         voiceMode = false;
       }
       break;
-    case 1: {  // listening: stop after ~1.4 s of silence following speech
-      const float level = platform::recordingLevel();
-      if (level > 0.35f) {
-        voiceHeardSpeech = true;
-        voiceSilenceSince = now;
+    case 1: {  // listening: the detector ends the turn after a pause (#119)
+      const voice::Event event = voiceVad_.update(platform::recordingLevelDb(), now);
+      voiceHeardSpeech = voiceVad_.heardSpeech();
+      if (event == voice::Event::NothingSaid && wakeTurnActive()) {   // the wake phrase, then nothing: stop
+        platform::stopRecording();
+        voiceState = 0;
+        voiceMode = false;
+        break;
       }
-      const bool longEnough = voiceHeardSpeech && now - voiceSilenceSince > 1400.0;
-      const bool tooLong = now - voiceSilenceSince > 20000.0;
-      if (longEnough || tooLong) {
+      if (event == voice::Event::TurnEnded || event == voice::Event::TooLong || event == voice::Event::NothingSaid) {
         const std::string wav = platform::stopRecording();
         if (!voiceHeardSpeech || wav.empty()) {
           voiceState = 0;
@@ -1091,6 +1096,7 @@ void App::tickVoiceMode() {
               return;
             }
             sendMessage(text);
+            ++voiceTurns_;
             voiceState = 3;
           });
         });

@@ -1613,6 +1613,7 @@ void App::frame() {
     tickScreenWatch();
     tickCamera();
     tickMeeting();
+    tickWakeWord();
   }
   handleShortcuts();
 

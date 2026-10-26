@@ -1,5 +1,7 @@
 #include "platform.h"
 
+#include <cstdlib>
+
 #import <AVFoundation/AVFoundation.h>
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -157,7 +159,24 @@ void stopSpeaking() {
 
 bool speaking() { return gSpeechPending || (gSynth != nil && gSynth.isSpeaking); }
 
+namespace {
+bool gFakeRecording = false;
+double gFakeStarted = 0;
+const char* fakeMicPath() {
+  const char* p = std::getenv("OWUI_FAKE_MIC");
+  return p && *p ? p : nullptr;
+}
+}  // namespace
+
+bool fakeMicrophone() { return fakeMicPath() != nullptr; }
+
 bool startRecording() {
+  if (fakeMicPath()) {   // the test hook: no microphone
+    if (gFakeRecording) return false;
+    gFakeRecording = true;
+    gFakeStarted = [NSProcessInfo processInfo].systemUptime;
+    return true;
+  }
   if (gRecorder) return false;
   NSString* tmp = [NSTemporaryDirectory()
       stringByAppendingPathComponent:[NSString stringWithFormat:@"owui-%@.wav",
@@ -184,6 +203,11 @@ bool startRecording() {
 }
 
 std::string stopRecording() {
+  if (fakeMicPath()) {
+    if (!gFakeRecording) return {};
+    gFakeRecording = false;
+    return core::readFile(fakeMicPath());
+  }
   if (!gRecorder) return {};
   [gRecorder stop];
   std::string path = gRecordingUrl.path.UTF8String;
@@ -194,7 +218,18 @@ std::string stopRecording() {
   return bytes;
 }
 
-bool recording() { return gRecorder != nil && gRecorder.isRecording; }
+bool recording() { return fakeMicPath() ? gFakeRecording : (gRecorder != nil && gRecorder.isRecording); }
+
+float recordingLevelDb() {
+  if (fakeMicPath()) {
+    // A quiet room, three seconds of speech, then quiet: what the detector needs to end a turn.
+    const double t = [NSProcessInfo processInfo].systemUptime - gFakeStarted;
+    return gFakeRecording && t >= 0.5 && t < 3.5 ? -18.0f : -58.0f;
+  }
+  if (!gRecorder) return -160.0f;
+  [gRecorder updateMeters];
+  return [gRecorder averagePowerForChannel:0];
+}
 
 float recordingLevel() {
   if (!gRecorder) return 0.0f;

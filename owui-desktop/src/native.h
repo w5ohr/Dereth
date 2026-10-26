@@ -24,6 +24,7 @@ struct Callbacks {
   std::function<std::vector<std::pair<std::string, std::string>>()> recentChats;
   std::function<void()> captureScreen;                    // capture hotkey / menu bar extra
   std::function<void(bool sleeping)> sleepWake;           // NSWorkspace will-sleep / did-wake
+  std::function<void(bool down)> pushToTalk;              // the hold-to-talk hotkey pressed / released (#119)
 };
 
 void install(const Callbacks& callbacks);
@@ -51,6 +52,10 @@ void unregisterHotkey();
 // Second global hotkey, for screen capture (fires Callbacks::captureScreen).
 bool registerCaptureHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift);
 void unregisterCaptureHotkey();
+// Third global hotkey, held to talk: Callbacks::pushToTalk(true) on press,
+// (false) on release. Carbon; no Accessibility permission (#119).
+bool registerPushToTalkHotkey(int keyCode, bool cmd, bool alt, bool ctrl, bool shift);
+void unregisterPushToTalkHotkey();
 
 // Runs the system screen capture (the same UI as Shift+Cmd+4: drag a region,
 // or press Space for a window) and returns the PNG. False when cancelled.
